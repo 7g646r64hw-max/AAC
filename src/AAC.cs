@@ -482,7 +482,7 @@
             {
                 _panels[i].ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE;
                 _panels[i].Font = "Monospace";
-                _panels[i].FontSize = 0.80f;
+                _panels[i].FontSize = 0.70f;
                 _panels[i].WriteText(text, false);
             }
         }
