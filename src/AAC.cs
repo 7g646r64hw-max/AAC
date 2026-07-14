@@ -355,7 +355,7 @@
                 findings.Add("no tagged AAC LCD");
 
             string level = hasController && hasGravityDrivePair ? "READY" : "INCOMPLETE";
-            string message = findings.Count == 0 ? "all required hardware discovered" : JoinFindings(findings);
+            string message = findings.Count == 0 ? "Hardware Scan Complete" : JoinFindings(findings);
 
             return new DiagnosticSnapshot(level, message, hasController, hasGravityDrivePair, hasDisplay);
         }
