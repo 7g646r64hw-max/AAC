@@ -332,12 +332,12 @@
             _builder.AppendLine("v" + version + "  MONITOR ONLY");
             _builder.AppendLine("----------------------");
             _builder.AppendLine("POST : " + diagnostic.Level);
-            _builder.AppendLine("CTRL : " + ShortName(hardware.PrimaryControllerName, 15));
+            _builder.AppendLine("CTRL : " + ShortName(hardware.PrimaryControllerName, 20));
             _builder.AppendLine("GRAV : " + FormatCount(hardware.GravityGeneratorCount));
             _builder.AppendLine("MASS : " + FormatCount(hardware.ArtificialMassCount));
             _builder.AppendLine("TICK : " + FormatTick(tickCount));
             _builder.AppendLine();
-            _builder.AppendLine(ShortLine(diagnostic.Message, 22));
+            _builder.AppendLine(ShortLine(diagnostic.Message, 40));
             return _builder.ToString();
         }
 
@@ -481,8 +481,8 @@
             for (int i = 0; i < _panels.Count; i++)
             {
                 _panels[i].ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE;
-                _panels[i].Font = "Monospace";
-                _panels[i].FontSize = 0.70f;
+                _panels[i].Font = "Debug";
+                _panels[i].FontSize = 0.75f;
                 _panels[i].WriteText(text, false);
             }
         }
