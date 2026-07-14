@@ -1,23 +1,26 @@
 /*
 ===============================================================================
  Adaptive Antigravity Controller (AAC)
- Version: 0.1.1-alpha.1
+ Version: 0.2.0-alpha.1
  Project Lead: Nomaddison
  Development Assistance: OpenAI ChatGPT
 
- MILESTONE 1 FOUNDATION BUILD
- This script establishes the runtime shell for discovery, diagnostics, and
- operator displays while keeping propulsion outputs in monitor-only mode.
+ MILESTONE 2 PHYSICS ENGINE MODEL BUILD
+ This script preserves the monitor-only Milestone 1 runtime shell while adding
+ tagged-hardware metadata, a ship-relative Physics Engine Model, and capability
+ analysis. Control outputs remain locked.
 ===============================================================================
 */
 
-    const string Version = "0.1.1-alpha.1";
+    const string Version = "0.2.0-alpha.1";
     const string SystemTag = "[AAC]";
 
     readonly Configuration _configuration;
     readonly EventLogger _eventLogger;
     readonly HardwareDiscovery _hardwareDiscovery;
     readonly Diagnostics _diagnostics;
+    readonly PhysicsEngineModelBuilder _physicsEngineModelBuilder;
+    readonly CapabilityAnalysis _capabilityAnalysis;
     readonly DisplayManager _displayManager;
     readonly AacCore _core;
 
@@ -29,10 +32,12 @@
         _eventLogger = new EventLogger(24);
         _hardwareDiscovery = new HardwareDiscovery(GridTerminalSystem, Me, _configuration);
         _diagnostics = new Diagnostics();
+        _physicsEngineModelBuilder = new PhysicsEngineModelBuilder();
+        _capabilityAnalysis = new CapabilityAnalysis();
         _displayManager = new DisplayManager(GridTerminalSystem, Me, _configuration, _eventLogger, Echo);
-        _core = new AacCore(Version, _hardwareDiscovery, _diagnostics, _displayManager, _eventLogger);
+        _core = new AacCore(Version, _hardwareDiscovery, _diagnostics, _physicsEngineModelBuilder, _capabilityAnalysis, _displayManager, _eventLogger);
 
-        _eventLogger.Record(0, "AAC boot: monitor-only foundation online.");
+        _eventLogger.Record(0, "AAC boot: monitor-only PEM foundation online.");
         _core.Tick("boot");
     }
 
@@ -46,6 +51,8 @@
         readonly string _version;
         readonly HardwareDiscovery _hardwareDiscovery;
         readonly Diagnostics _diagnostics;
+        readonly PhysicsEngineModelBuilder _physicsEngineModelBuilder;
+        readonly CapabilityAnalysis _capabilityAnalysis;
         readonly DisplayManager _displayManager;
         readonly EventLogger _eventLogger;
         int _tickCount;
@@ -54,12 +61,16 @@
             string version,
             HardwareDiscovery hardwareDiscovery,
             Diagnostics diagnostics,
+            PhysicsEngineModelBuilder physicsEngineModelBuilder,
+            CapabilityAnalysis capabilityAnalysis,
             DisplayManager displayManager,
             EventLogger eventLogger)
         {
             _version = version;
             _hardwareDiscovery = hardwareDiscovery;
             _diagnostics = diagnostics;
+            _physicsEngineModelBuilder = physicsEngineModelBuilder;
+            _capabilityAnalysis = capabilityAnalysis;
             _displayManager = displayManager;
             _eventLogger = eventLogger;
         }
@@ -70,11 +81,13 @@
 
             HardwareSnapshot hardware = _hardwareDiscovery.Scan();
             DiagnosticSnapshot diagnostic = _diagnostics.Evaluate(hardware);
+            PhysicsEngineModel physicsEngineModel = _physicsEngineModelBuilder.Build(hardware);
+            CapabilitySnapshot capability = _capabilityAnalysis.Evaluate(physicsEngineModel);
 
             if (IsManualRescan(command))
                 _eventLogger.Record(_tickCount, "Manual rescan requested.");
 
-            _displayManager.Render(_version, _tickCount, hardware, diagnostic);
+            _displayManager.Render(_version, _tickCount, hardware, diagnostic, physicsEngineModel, capability);
         }
 
         static bool IsManualRescan(string command)
@@ -144,6 +157,10 @@
             _gridTerminalSystem.GetBlocksOfType(_alarms, TaggedSameConstruct);
             _gridTerminalSystem.GetBlocksOfType(_warningLights, TaggedSameConstruct);
 
+            IMyShipController primaryController = FirstUsableController();
+            List<HardwareBlockMetadata> taggedGenerators = BuildTaggedMetadata(_gravityGenerators, primaryController);
+            List<HardwareBlockMetadata> taggedMass = BuildTaggedMetadata(_artificialMass, primaryController);
+
             return new HardwareSnapshot(
                 _controllers.Count,
                 _gravityGenerators.Count,
@@ -151,7 +168,10 @@
                 _textPanels.Count,
                 _alarms.Count,
                 _warningLights.Count,
-                FirstUsableControllerName(),
+                PrimaryControllerName(primaryController),
+                primaryController,
+                taggedGenerators,
+                taggedMass,
                 CountTaggedDisplays(_configuration.FlightDisplayTag),
                 CountTaggedDisplays(_configuration.MaintenanceDisplayTag),
                 CountTaggedDisplays(_configuration.EngineeringDisplayTag));
@@ -167,15 +187,31 @@
             return SameConstruct(block) && _configuration.IsTagged(block);
         }
 
-        string FirstUsableControllerName()
+        IMyShipController FirstUsableController()
         {
             for (int i = 0; i < _controllers.Count; i++)
             {
                 if (_controllers[i].IsMainCockpit || _controllers[i].CanControlShip)
-                    return _controllers[i].CustomName;
+                    return _controllers[i];
             }
 
-            return _controllers.Count == 0 ? "none" : _controllers[0].CustomName;
+            return _controllers.Count == 0 ? null : _controllers[0];
+        }
+
+        string PrimaryControllerName(IMyShipController controller)
+        {
+            return controller == null ? "none" : controller.CustomName;
+        }
+
+        List<HardwareBlockMetadata> BuildTaggedMetadata<T>(List<T> blocks, IMyShipController controller) where T : class, IMyTerminalBlock
+        {
+            List<HardwareBlockMetadata> metadata = new List<HardwareBlockMetadata>();
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                if (_configuration.IsTagged(blocks[i]))
+                    metadata.Add(HardwareBlockMetadata.FromBlock(blocks[i], controller));
+            }
+            return metadata;
         }
 
         int CountTaggedDisplays(string tag)
@@ -190,6 +226,62 @@
         }
     }
 
+    sealed class HardwareBlockMetadata
+    {
+        public readonly long EntityId;
+        public readonly string CustomName;
+        public readonly string ShipDirection;
+        public readonly double DistanceFromController;
+
+        public HardwareBlockMetadata(long entityId, string customName, string shipDirection, double distanceFromController)
+        {
+            EntityId = entityId;
+            CustomName = customName;
+            ShipDirection = shipDirection;
+            DistanceFromController = distanceFromController;
+        }
+
+        public static HardwareBlockMetadata FromBlock(IMyTerminalBlock block, IMyShipController controller)
+        {
+            string direction = "unknown";
+            double distance = 0.0;
+            if (block != null && controller != null)
+            {
+                Vector3D offset = block.GetPosition() - controller.GetPosition();
+                distance = offset.Length();
+                direction = DirectionName(offset, controller.WorldMatrix);
+            }
+
+            return new HardwareBlockMetadata(
+                block == null ? 0 : block.EntityId,
+                block == null ? "unknown" : block.CustomName,
+                direction,
+                distance);
+        }
+
+        static string DirectionName(Vector3D offset, MatrixD reference)
+        {
+            if (offset.LengthSquared() < 0.0001)
+                return "Center";
+
+            double forward = Vector3D.Dot(offset, reference.Forward);
+            double backward = Vector3D.Dot(offset, reference.Backward);
+            double left = Vector3D.Dot(offset, reference.Left);
+            double right = Vector3D.Dot(offset, reference.Right);
+            double up = Vector3D.Dot(offset, reference.Up);
+            double down = Vector3D.Dot(offset, reference.Down);
+
+            double best = forward;
+            string name = "Forward";
+            if (backward > best) { best = backward; name = "Backward"; }
+            if (left > best) { best = left; name = "Left"; }
+            if (right > best) { best = right; name = "Right"; }
+            if (up > best) { best = up; name = "Up"; }
+            if (down > best) { name = "Down"; }
+            return name;
+        }
+    }
+
     sealed class HardwareSnapshot
     {
         public readonly int ControllerCount;
@@ -199,9 +291,16 @@
         public readonly int AlarmCount;
         public readonly int WarningLightCount;
         public readonly string PrimaryControllerName;
+        public readonly IMyShipController PrimaryController;
+        public readonly List<HardwareBlockMetadata> TaggedGravityGenerators;
+        public readonly List<HardwareBlockMetadata> TaggedArtificialMass;
         public readonly int FlightDisplayCount;
         public readonly int MaintenanceDisplayCount;
         public readonly int EngineeringDisplayCount;
+
+        public int TaggedGravityGeneratorCount { get { return TaggedGravityGenerators.Count; } }
+        public int TaggedArtificialMassCount { get { return TaggedArtificialMass.Count; } }
+        public bool CoordinateFrameValid { get { return PrimaryController != null; } }
 
         public HardwareSnapshot(
             int controllerCount,
@@ -211,6 +310,9 @@
             int alarmCount,
             int warningLightCount,
             string primaryControllerName,
+            IMyShipController primaryController,
+            List<HardwareBlockMetadata> taggedGravityGenerators,
+            List<HardwareBlockMetadata> taggedArtificialMass,
             int flightDisplayCount,
             int maintenanceDisplayCount,
             int engineeringDisplayCount)
@@ -222,6 +324,9 @@
             AlarmCount = alarmCount;
             WarningLightCount = warningLightCount;
             PrimaryControllerName = primaryControllerName;
+            PrimaryController = primaryController;
+            TaggedGravityGenerators = taggedGravityGenerators;
+            TaggedArtificialMass = taggedArtificialMass;
             FlightDisplayCount = flightDisplayCount;
             MaintenanceDisplayCount = maintenanceDisplayCount;
             EngineeringDisplayCount = engineeringDisplayCount;
@@ -291,6 +396,91 @@
         }
     }
 
+    sealed class PhysicsEngineModelBuilder
+    {
+        public PhysicsEngineModel Build(HardwareSnapshot hardware)
+        {
+            bool coordinateValid = hardware.CoordinateFrameValid;
+            return new PhysicsEngineModel(
+                coordinateValid,
+                hardware.PrimaryControllerName,
+                hardware.TaggedGravityGenerators,
+                hardware.TaggedArtificialMass);
+        }
+    }
+
+    sealed class PhysicsEngineModel
+    {
+        public readonly bool CoordinateFrameValid;
+        public readonly string ReferenceControllerName;
+        public readonly List<HardwareBlockMetadata> GravityGenerators;
+        public readonly List<HardwareBlockMetadata> ArtificialMass;
+
+        public int TaggedGravityGeneratorCount { get { return GravityGenerators.Count; } }
+        public int TaggedArtificialMassCount { get { return ArtificialMass.Count; } }
+        public bool HasTaggedDrivePair { get { return TaggedGravityGeneratorCount > 0 && TaggedArtificialMassCount > 0; } }
+        public bool Ready { get { return CoordinateFrameValid && HasTaggedDrivePair; } }
+
+        public PhysicsEngineModel(
+            bool coordinateFrameValid,
+            string referenceControllerName,
+            List<HardwareBlockMetadata> gravityGenerators,
+            List<HardwareBlockMetadata> artificialMass)
+        {
+            CoordinateFrameValid = coordinateFrameValid;
+            ReferenceControllerName = referenceControllerName;
+            GravityGenerators = gravityGenerators;
+            ArtificialMass = artificialMass;
+        }
+    }
+
+    sealed class CapabilityAnalysis
+    {
+        public CapabilitySnapshot Evaluate(PhysicsEngineModel model)
+        {
+            List<string> findings = new List<string>();
+            if (!model.CoordinateFrameValid)
+                findings.Add("invalid coordinate frame");
+            if (model.TaggedGravityGeneratorCount == 0)
+                findings.Add("no AAC-tagged generators");
+            if (model.TaggedArtificialMassCount == 0)
+                findings.Add("no AAC-tagged artificial mass");
+
+            string status = findings.Count == 0 ? "OPERATIONAL" : "LIMITED";
+            string message = findings.Count == 0
+                ? "tagged PEM ready for future solver input"
+                : JoinFindings(findings);
+
+            return new CapabilitySnapshot(status, message, model.Ready);
+        }
+
+        static string JoinFindings(List<string> findings)
+        {
+            StringBuilder builder = new StringBuilder();
+            for (int i = 0; i < findings.Count; i++)
+            {
+                if (i > 0)
+                    builder.Append("; ");
+                builder.Append(findings[i]);
+            }
+            return builder.ToString();
+        }
+    }
+
+    sealed class CapabilitySnapshot
+    {
+        public readonly string Status;
+        public readonly string Message;
+        public readonly bool PemReady;
+
+        public CapabilitySnapshot(string status, string message, bool pemReady)
+        {
+            Status = status;
+            Message = message;
+            PemReady = pemReady;
+        }
+    }
+
     sealed class DisplayManager
     {
         readonly IMyGridTerminalSystem _gridTerminalSystem;
@@ -315,13 +505,13 @@
             _echo = echo;
         }
 
-        public void Render(string version, int tickCount, HardwareSnapshot hardware, DiagnosticSnapshot diagnostic)
+        public void Render(string version, int tickCount, HardwareSnapshot hardware, DiagnosticSnapshot diagnostic, PhysicsEngineModel physicsEngineModel, CapabilitySnapshot capability)
         {
             string maintenance = BuildMaintenanceText(version, tickCount, hardware, diagnostic);
 
             WriteSurface(_configuration.FlightDisplayTag, BuildFlightText(version, tickCount, hardware, diagnostic));
             WriteSurface(_configuration.MaintenanceDisplayTag, maintenance);
-            WriteSurface(_configuration.EngineeringDisplayTag, BuildEngineeringText(version, tickCount, hardware, diagnostic));
+            WriteSurface(_configuration.EngineeringDisplayTag, BuildEngineeringText(version, tickCount, hardware, diagnostic, physicsEngineModel, capability));
             EchoMaintenanceSummary(version, tickCount, hardware, diagnostic);
         }
 
@@ -363,6 +553,9 @@
             _builder.AppendLine("  Controllers : " + FormatCount(hardware.ControllerCount));
             _builder.AppendLine("  Gravity Gen : " + FormatCount(hardware.GravityGeneratorCount));
             _builder.AppendLine("  Art. Mass   : " + FormatCount(hardware.ArtificialMassCount));
+            _builder.AppendLine("AAC-Owned Propulsion");
+            _builder.AppendLine("  Tagged Gen  : " + FormatCount(hardware.TaggedGravityGeneratorCount));
+            _builder.AppendLine("  Tagged Mass : " + FormatCount(hardware.TaggedArtificialMassCount));
             _builder.AppendLine("  Alarms      : " + FormatCount(hardware.AlarmCount));
             _builder.AppendLine("  Warn Lights : " + FormatCount(hardware.WarningLightCount));
             _builder.AppendLine("  Displays F/M/E: "
@@ -380,7 +573,9 @@
             string version,
             int tickCount,
             HardwareSnapshot hardware,
-            DiagnosticSnapshot diagnostic)
+            DiagnosticSnapshot diagnostic,
+            PhysicsEngineModel physicsEngineModel,
+            CapabilitySnapshot capability)
         {
             _builder.Clear();
             _builder.AppendLine("AAC ENGINEERING");
@@ -393,14 +588,25 @@
             _builder.AppendLine("  Solver    : disabled");
             _builder.AppendLine("  Outputs   : monitor only");
             _builder.AppendLine();
-            _builder.AppendLine("Development Status");
-            _builder.AppendLine("  PEM Model : pending");
-            _builder.AppendLine("  Capability: pending");
-            _builder.AppendLine("  Control   : locked out");
+            _builder.AppendLine("Physics Engine Model");
+            _builder.AppendLine("  PEM Ready : " + YesNo(physicsEngineModel.Ready));
+            _builder.AppendLine("  Tagged Gen: " + FormatCount(physicsEngineModel.TaggedGravityGeneratorCount));
+            _builder.AppendLine("  Tagged AM : " + FormatCount(physicsEngineModel.TaggedArtificialMassCount));
+            _builder.AppendLine("  Coords    : " + (physicsEngineModel.CoordinateFrameValid ? "VALID" : "INVALID"));
+            _builder.AppendLine("  Reference : " + ShortName(physicsEngineModel.ReferenceControllerName, 18));
+            _builder.AppendLine();
+            _builder.AppendLine("Capability Analysis");
+            _builder.AppendLine("  Status    : " + capability.Status);
+            _builder.AppendLine("  Control Output: LOCKED");
+            AppendWrapped(_builder, capability.Message, "  ", 26);
             _builder.AppendLine();
             _builder.AppendLine("Discovery Snapshot");
             _builder.AppendLine("  Text LCDs : " + FormatCount(hardware.TextPanelCount));
             _builder.AppendLine("  POST      : " + diagnostic.Level);
+            _builder.AppendLine("  Detected Gen/Mass: "
+                + FormatCount(hardware.GravityGeneratorCount)
+                + "/"
+                + FormatCount(hardware.ArtificialMassCount));
             return _builder.ToString();
         }
 
