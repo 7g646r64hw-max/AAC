@@ -30,6 +30,6 @@ Core philosophy:
 
 ## Safety Posture
 
-`v0.1.0-alpha.1` is monitor-only. It discovers and reports hardware but does not
+`v0.1.1-alpha.1` is monitor-only. It discovers and reports hardware but does not
 modify gravity generator fields, artificial mass state, alarms, warning lights, or
 ship motion.
