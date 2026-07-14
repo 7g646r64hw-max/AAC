@@ -1,7 +1,7 @@
 /*
 ===============================================================================
  Adaptive Antigravity Controller (AAC)
- Version: 0.1.0-alpha.1
+ Version: 0.1.1-alpha.1
  Project Lead: Nomaddison
  Development Assistance: OpenAI ChatGPT
 
@@ -11,7 +11,7 @@
 ===============================================================================
 */
 
-    const string Version = "0.1.0-alpha.1";
+    const string Version = "0.1.1-alpha.1";
     const string SystemTag = "[AAC]";
 
     readonly Configuration _configuration;
@@ -29,7 +29,7 @@
         _eventLogger = new EventLogger(24);
         _hardwareDiscovery = new HardwareDiscovery(GridTerminalSystem, Me, _configuration);
         _diagnostics = new Diagnostics();
-        _displayManager = new DisplayManager(GridTerminalSystem, Me, _configuration, _eventLogger);
+        _displayManager = new DisplayManager(GridTerminalSystem, Me, _configuration, _eventLogger, Echo);
         _core = new AacCore(Version, _hardwareDiscovery, _diagnostics, _displayManager, _eventLogger);
 
         _eventLogger.Record(0, "AAC boot: monitor-only foundation online.");
@@ -299,55 +299,73 @@
         readonly EventLogger _eventLogger;
         readonly List<IMyTextPanel> _panels = new List<IMyTextPanel>();
         readonly StringBuilder _builder = new StringBuilder();
+        readonly Action<string> _echo;
 
         public DisplayManager(
             IMyGridTerminalSystem gridTerminalSystem,
             IMyProgrammableBlock me,
             Configuration configuration,
-            EventLogger eventLogger)
+            EventLogger eventLogger,
+            Action<string> echo)
         {
             _gridTerminalSystem = gridTerminalSystem;
             _me = me;
             _configuration = configuration;
             _eventLogger = eventLogger;
+            _echo = echo;
         }
 
         public void Render(string version, int tickCount, HardwareSnapshot hardware, DiagnosticSnapshot diagnostic)
         {
+            string maintenance = BuildMaintenanceText(version, tickCount, hardware, diagnostic);
+
             WriteSurface(_configuration.FlightDisplayTag, BuildFlightText(version, tickCount, hardware, diagnostic));
-            WriteSurface(_configuration.MaintenanceDisplayTag, BuildMaintenanceText(version, hardware, diagnostic));
-            WriteSurface(_configuration.EngineeringDisplayTag, BuildEngineeringText(version, hardware));
+            WriteSurface(_configuration.MaintenanceDisplayTag, maintenance);
+            WriteSurface(_configuration.EngineeringDisplayTag, BuildEngineeringText(version, tickCount, hardware, diagnostic));
+            EchoMaintenanceSummary(version, tickCount, hardware, diagnostic);
         }
 
         string BuildFlightText(string version, int tickCount, HardwareSnapshot hardware, DiagnosticSnapshot diagnostic)
         {
             _builder.Clear();
-            _builder.AppendLine("AAC Flight");
-            _builder.AppendLine("Version: " + version);
-            _builder.AppendLine("Mode: Monitor Only");
-            _builder.AppendLine("Status: " + diagnostic.Level);
-            _builder.AppendLine("POST: " + diagnostic.Message);
-            _builder.AppendLine("Controller: " + hardware.PrimaryControllerName);
-            _builder.AppendLine("Gravity generators: " + hardware.GravityGeneratorCount);
-            _builder.AppendLine("Artificial mass: " + hardware.ArtificialMassCount);
-            _builder.AppendLine("Tick: " + tickCount);
+            _builder.AppendLine("AAC FLIGHT");
+            _builder.AppendLine("v" + version + "  MONITOR ONLY");
+            _builder.AppendLine("----------------------");
+            _builder.AppendLine("POST : " + diagnostic.Level);
+            _builder.AppendLine("CTRL : " + ShortName(hardware.PrimaryControllerName, 15));
+            _builder.AppendLine("GRAV : " + FormatCount(hardware.GravityGeneratorCount));
+            _builder.AppendLine("MASS : " + FormatCount(hardware.ArtificialMassCount));
+            _builder.AppendLine("TICK : " + FormatTick(tickCount));
+            _builder.AppendLine();
+            _builder.AppendLine(ShortLine(diagnostic.Message, 22));
             return _builder.ToString();
         }
 
-        string BuildMaintenanceText(string version, HardwareSnapshot hardware, DiagnosticSnapshot diagnostic)
+        string BuildMaintenanceText(
+            string version,
+            int tickCount,
+            HardwareSnapshot hardware,
+            DiagnosticSnapshot diagnostic)
         {
             _builder.Clear();
-            _builder.AppendLine("AAC Maintenance");
-            _builder.AppendLine("Version: " + version);
-            _builder.AppendLine("POST: " + diagnostic.Level);
-            _builder.AppendLine("Findings: " + diagnostic.Message);
-            _builder.AppendLine("Controllers: " + hardware.ControllerCount);
-            _builder.AppendLine("Gravity generators: " + hardware.GravityGeneratorCount);
-            _builder.AppendLine("Artificial mass blocks: " + hardware.ArtificialMassCount);
-            _builder.AppendLine("AAC alarms: " + hardware.AlarmCount);
-            _builder.AppendLine("AAC warning lights: " + hardware.WarningLightCount);
-            _builder.AppendLine(
-                "Displays F/M/E: "
+            _builder.AppendLine("AAC MAINTENANCE");
+            _builder.AppendLine("v" + version + "  MONITOR ONLY");
+            _builder.AppendLine("Tick " + FormatTick(tickCount));
+            _builder.AppendLine("----------------------------");
+            _builder.AppendLine("POST      : " + diagnostic.Level);
+            _builder.AppendLine("Controller: " + YesNo(diagnostic.HasController));
+            _builder.AppendLine("Drive Pair: " + YesNo(diagnostic.HasGravityDrivePair));
+            _builder.AppendLine("AAC LCD   : " + YesNo(diagnostic.HasDisplay));
+            _builder.AppendLine("Finding   :");
+            AppendWrapped(_builder, diagnostic.Message, "  ", 26);
+            _builder.AppendLine();
+            _builder.AppendLine("Hardware Counts");
+            _builder.AppendLine("  Controllers : " + FormatCount(hardware.ControllerCount));
+            _builder.AppendLine("  Gravity Gen : " + FormatCount(hardware.GravityGeneratorCount));
+            _builder.AppendLine("  Art. Mass   : " + FormatCount(hardware.ArtificialMassCount));
+            _builder.AppendLine("  Alarms      : " + FormatCount(hardware.AlarmCount));
+            _builder.AppendLine("  Warn Lights : " + FormatCount(hardware.WarningLightCount));
+            _builder.AppendLine("  Displays F/M/E: "
                 + hardware.FlightDisplayCount
                 + "/"
                 + hardware.MaintenanceDisplayCount
@@ -358,17 +376,99 @@
             return _builder.ToString();
         }
 
-        string BuildEngineeringText(string version, HardwareSnapshot hardware)
+        string BuildEngineeringText(
+            string version,
+            int tickCount,
+            HardwareSnapshot hardware,
+            DiagnosticSnapshot diagnostic)
         {
             _builder.Clear();
-            _builder.AppendLine("AAC Engineering");
-            _builder.AppendLine("Version: " + version);
-            _builder.AppendLine("Architecture: adaptive discovery");
-            _builder.AppendLine("PEM: pending calibration");
-            _builder.AppendLine("Capability analysis: pending");
-            _builder.AppendLine("Gravity solver: disabled");
-            _builder.AppendLine("Discovered text panels: " + hardware.TextPanelCount);
+            _builder.AppendLine("AAC ENGINEERING");
+            _builder.AppendLine("v" + version + "  MONITOR ONLY");
+            _builder.AppendLine("Tick " + FormatTick(tickCount));
+            _builder.AppendLine("----------------------------");
+            _builder.AppendLine("Runtime");
+            _builder.AppendLine("  Discovery : active");
+            _builder.AppendLine("  Diagnostics: active");
+            _builder.AppendLine("  Solver    : disabled");
+            _builder.AppendLine("  Outputs   : monitor only");
+            _builder.AppendLine();
+            _builder.AppendLine("Development Status");
+            _builder.AppendLine("  PEM Model : pending");
+            _builder.AppendLine("  Capability: pending");
+            _builder.AppendLine("  Control   : locked out");
+            _builder.AppendLine();
+            _builder.AppendLine("Discovery Snapshot");
+            _builder.AppendLine("  Text LCDs : " + FormatCount(hardware.TextPanelCount));
+            _builder.AppendLine("  POST      : " + diagnostic.Level);
             return _builder.ToString();
+        }
+
+        void EchoMaintenanceSummary(string version, int tickCount, HardwareSnapshot hardware, DiagnosticSnapshot diagnostic)
+        {
+            if (_echo == null)
+                return;
+
+            _builder.Clear();
+            _builder.AppendLine("AAC v" + version + " MONITOR ONLY");
+            _builder.AppendLine("Tick " + FormatTick(tickCount) + " POST " + diagnostic.Level);
+            _builder.AppendLine("Ctrl " + hardware.ControllerCount
+                + " Grav " + hardware.GravityGeneratorCount
+                + " Mass " + hardware.ArtificialMassCount);
+            _builder.AppendLine(ShortLine(diagnostic.Message, 36));
+            _echo(_builder.ToString());
+        }
+
+        static string FormatCount(int value)
+        {
+            return value.ToString("000");
+        }
+
+        static string FormatTick(int value)
+        {
+            return value.ToString("00000");
+        }
+
+        static string YesNo(bool value)
+        {
+            return value ? "YES" : "NO";
+        }
+
+        static string ShortName(string value, int maxLength)
+        {
+            if (string.IsNullOrEmpty(value))
+                return "none";
+            return ShortLine(value, maxLength);
+        }
+
+        static string ShortLine(string value, int maxLength)
+        {
+            if (string.IsNullOrEmpty(value) || value.Length <= maxLength)
+                return value;
+            if (maxLength <= 3)
+                return value.Substring(0, maxLength);
+            return value.Substring(0, maxLength - 3) + "...";
+        }
+
+        static void AppendWrapped(
+            StringBuilder builder,
+            string text,
+            string indent,
+            int maxWidth)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                builder.AppendLine(indent + "none");
+                return;
+            }
+
+            int index = 0;
+            while (index < text.Length)
+            {
+                int take = Math.Min(maxWidth, text.Length - index);
+                builder.AppendLine(indent + text.Substring(index, take));
+                index += take;
+            }
         }
 
         void WriteSurface(string tag, string text)
@@ -381,6 +481,8 @@
             for (int i = 0; i < _panels.Count; i++)
             {
                 _panels[i].ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE;
+                _panels[i].Font = "Monospace";
+                _panels[i].FontSize = 0.80f;
                 _panels[i].WriteText(text, false);
             }
         }
@@ -401,7 +503,7 @@
             if (_events.Count >= _capacity)
                 _events.Dequeue();
 
-            _events.Enqueue("tick " + tick + ": " + message);
+            _events.Enqueue("[" + tick.ToString("00000") + "] " + message);
         }
 
         public void AppendTo(StringBuilder builder)
