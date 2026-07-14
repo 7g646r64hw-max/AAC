@@ -18,8 +18,7 @@ using Sandbox.ModAPI.Ingame;
 using SpaceEngineers.Game.ModAPI.Ingame;
 using VRage.Game.ModAPI.Ingame;
 
-public sealed class Program : MyGridProgram
-{
+
     const string Version = "0.1.0-alpha.1";
     const string SystemTag = "[AAC]";
 
@@ -426,4 +425,3 @@ public sealed class Program : MyGridProgram
                 builder.AppendLine("- " + item);
         }
     }
-}
