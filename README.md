@@ -27,3 +27,23 @@ implemented.
 ## Operator Commands
 Run the programmable block with `scan` or `rescan` to force an annotated discovery
 pass in the maintenance event log.
+
+
+## Space Engineers Programmable Block
+
+The file located at `src/AAC.cs` is the **Programmable Block version** of AAC.
+
+It is intended to be copied directly into a Space Engineers Programmable Block editor.
+
+Do **not** wrap the file in:
+
+```csharp
+public sealed class Program : MyGridProgram
+{
+    ...
+}
+```
+
+and do **not** add `using` statements. The programmable block editor provides these automatically.
+
+If maintaining a standalone development version, generate the PB-ready `src/AAC.cs` by stripping the outer Program class and using directives.
