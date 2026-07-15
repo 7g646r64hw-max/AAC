@@ -1,8 +1,8 @@
 # Installation Guide
 
-Version: `v0.3.0-alpha.1`
+Version: `v0.2.5-alpha.1`
 
-AAC v0.3.0-alpha.1 is a monitor-only Space Engineers Programmable Block script. It discovers hardware, evaluates diagnostics, builds a read-only Physics Engine Model (PEM), updates tagged LCDs, provides read-only debug pages, and echoes a concise maintenance/debug summary. It does not apply propulsion or alert outputs.
+AAC v0.2.5-alpha.1 is a monitor-only Space Engineers Programmable Block script. It discovers hardware, evaluates diagnostics, builds a read-only Physics Engine Model (PEM), updates tagged LCDs, provides read-only debug pages, and echoes a concise maintenance/debug summary. It does not apply propulsion or alert outputs.
 
 ## Required Blocks
 
@@ -75,15 +75,6 @@ Run the programmable block with debug commands to inspect read-only validation p
 
 ## Safety Notes
 
-AAC v0.3.0-alpha.1 preserves monitor-only behavior. It does not command gravity generators, artificial mass blocks, alarms, warning lights, thrusters, gyros, or other ship-control outputs.
+AAC v0.2.5-alpha.1 preserves monitor-only behavior. It does not command gravity generators, artificial mass blocks, alarms, warning lights, thrusters, gyros, or other ship-control outputs.
 
 Block group naming will be finalized in a later milestone.
-
-
-## Milestone 3 Debug Commands
-
-Use `debug generators` to inspect one gravity generator per page and `debug mass` to inspect one artificial mass block per page. Within either inspector, `debug next` and `debug prev` move between AAC-owned components. Use `debug pem`, `debug discovery`, `debug capability`, or `debug performance` to return to summary pages.
-
-The Engineering display now includes PEM health, detected/tagged/contributing/non-contributing counts, reference controller, coordinate frame, and per-axis redundancy. These values are traceable through DebugManager inspector and capability pages.
-
-AAC remains monitor-only and must not be connected to any expectation of active propulsion control in this milestone.

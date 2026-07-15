@@ -1,18 +1,19 @@
 /*
 ===============================================================================
  Adaptive Antigravity Controller (AAC)
- Version: 0.3.0-alpha.1
+ Version: 0.2.5-alpha.1
  Project Lead: Nomaddison
  Development Assistance: OpenAI ChatGPT
 
- MILESTONE 3 PHYSICS ENGINE MODEL ENHANCEMENT
- This script makes the PEM the authoritative monitor-only digital twin for
- AAC-owned propulsion hardware, including derived orientation, gravity axis,
- lifecycle validation, dynamic capability groups, and read-only inspectors.
+ MILESTONE 2.5 DEBUG AND VALIDATION FRAMEWORK
+ This script preserves the monitor-only Milestone 2 PEM runtime while adding
+ a read-only DebugManager for validation pages, debug navigation, and a
+ permanent programmable-block Echo() debug status line. Control outputs remain
+ locked.
 ===============================================================================
 */
 
-    const string Version = "0.3.0-alpha.1";
+    const string Version = "0.2.5-alpha.1";
     const string SystemTag = "[AAC]";
 
     readonly Configuration _configuration;
@@ -39,7 +40,7 @@
         _displayManager = new DisplayManager(GridTerminalSystem, Me, _configuration, _eventLogger, _debugManager, Echo);
         _core = new AacCore(Version, _hardwareDiscovery, _diagnostics, _physicsEngineModelBuilder, _capabilityAnalysis, _debugManager, _displayManager, _eventLogger);
 
-        _eventLogger.Record(0, "AAC boot: monitor-only PEM digital twin online.");
+        _eventLogger.Record(0, "AAC boot: monitor-only debug validation framework online.");
         _core.Tick("boot");
     }
 
@@ -237,105 +238,46 @@
     {
         public readonly long EntityId;
         public readonly string CustomName;
-        public readonly string MountPosition;
-        public readonly string BlockOrientation;
-        public readonly string GravityProjectionAxis;
+        public readonly string ShipDirection;
         public readonly double DistanceFromController;
-        public readonly bool Enabled;
-        public readonly bool Working;
-        public readonly bool Validated;
-        public readonly bool Contributing;
-        public readonly string DebugId;
 
-        public HardwareBlockMetadata(long entityId, string customName, string mountPosition, string blockOrientation, string gravityProjectionAxis, double distanceFromController, bool enabled, bool working)
+        public HardwareBlockMetadata(long entityId, string customName, string shipDirection, double distanceFromController)
         {
             EntityId = entityId;
             CustomName = customName;
-            MountPosition = mountPosition;
-            BlockOrientation = blockOrientation;
-            GravityProjectionAxis = gravityProjectionAxis;
+            ShipDirection = shipDirection;
             DistanceFromController = distanceFromController;
-            Enabled = enabled;
-            Working = working;
-            Validated = mountPosition != "unknown" && blockOrientation != "unknown" && gravityProjectionAxis != "unknown" && working;
-            Contributing = Validated && enabled;
-            DebugId = "UNASSIGNED";
-        }
-
-        HardwareBlockMetadata(HardwareBlockMetadata source, string debugId)
-        {
-            EntityId = source.EntityId;
-            CustomName = source.CustomName;
-            MountPosition = source.MountPosition;
-            BlockOrientation = source.BlockOrientation;
-            GravityProjectionAxis = source.GravityProjectionAxis;
-            DistanceFromController = source.DistanceFromController;
-            Enabled = source.Enabled;
-            Working = source.Working;
-            Validated = source.Validated;
-            Contributing = source.Contributing;
-            DebugId = debugId;
-        }
-
-        public HardwareBlockMetadata WithDebugId(string prefix, int index)
-        {
-            return new HardwareBlockMetadata(this, prefix + "-" + index.ToString("000"));
         }
 
         public static HardwareBlockMetadata FromBlock(IMyTerminalBlock block, IMyShipController controller)
         {
-            string mountPosition = "unknown";
-            string blockOrientation = "unknown";
-            string gravityProjectionAxis = "unknown";
+            string direction = "unknown";
             double distance = 0.0;
-            bool enabled = false;
-            bool working = false;
-
-            if (block != null)
-            {
-                IMyFunctionalBlock functional = block as IMyFunctionalBlock;
-                enabled = functional == null || functional.Enabled;
-                working = block.IsWorking;
-            }
-
             if (block != null && controller != null)
             {
                 Vector3D offset = block.GetPosition() - controller.GetPosition();
                 distance = offset.Length();
-                mountPosition = DirectionName(offset, controller.WorldMatrix);
-                blockOrientation = AxisName(block.WorldMatrix.Forward, controller.WorldMatrix);
-                gravityProjectionAxis = AxisName(block.WorldMatrix.Down, controller.WorldMatrix);
+                direction = DirectionName(offset, controller.WorldMatrix);
             }
 
             return new HardwareBlockMetadata(
                 block == null ? 0 : block.EntityId,
                 block == null ? "unknown" : block.CustomName,
-                mountPosition,
-                blockOrientation,
-                gravityProjectionAxis,
-                distance,
-                enabled,
-                working);
+                direction,
+                distance);
         }
 
         static string DirectionName(Vector3D offset, MatrixD reference)
         {
             if (offset.LengthSquared() < 0.0001)
                 return "Center";
-            return AxisName(offset, reference);
-        }
 
-        static string AxisName(Vector3D vector, MatrixD reference)
-        {
-            if (vector.LengthSquared() < 0.0001)
-                return "unknown";
-
-            double forward = Vector3D.Dot(vector, reference.Forward);
-            double backward = Vector3D.Dot(vector, reference.Backward);
-            double left = Vector3D.Dot(vector, reference.Left);
-            double right = Vector3D.Dot(vector, reference.Right);
-            double up = Vector3D.Dot(vector, reference.Up);
-            double down = Vector3D.Dot(vector, reference.Down);
+            double forward = Vector3D.Dot(offset, reference.Forward);
+            double backward = Vector3D.Dot(offset, reference.Backward);
+            double left = Vector3D.Dot(offset, reference.Left);
+            double right = Vector3D.Dot(offset, reference.Right);
+            double up = Vector3D.Dot(offset, reference.Up);
+            double down = Vector3D.Dot(offset, reference.Down);
 
             double best = forward;
             string name = "Forward";
@@ -462,6 +404,19 @@
         }
     }
 
+    sealed class PhysicsEngineModelBuilder
+    {
+        public PhysicsEngineModel Build(HardwareSnapshot hardware)
+        {
+            bool coordinateValid = hardware.CoordinateFrameValid;
+            return new PhysicsEngineModel(
+                coordinateValid,
+                hardware.PrimaryControllerName,
+                hardware.TaggedGravityGenerators,
+                hardware.TaggedArtificialMass);
+        }
+    }
+
     sealed class PhysicsEngineModel
     {
         public readonly bool CoordinateFrameValid;
@@ -471,12 +426,8 @@
 
         public int TaggedGravityGeneratorCount { get { return GravityGenerators.Count; } }
         public int TaggedArtificialMassCount { get { return ArtificialMass.Count; } }
-        public int ContributingGeneratorCount { get { return CountContributing(GravityGenerators); } }
-        public int ContributingMassCount { get { return CountContributing(ArtificialMass); } }
-        public int NonContributingGeneratorCount { get { return TaggedGravityGeneratorCount - ContributingGeneratorCount; } }
-        public int NonContributingMassCount { get { return TaggedArtificialMassCount - ContributingMassCount; } }
         public bool HasTaggedDrivePair { get { return TaggedGravityGeneratorCount > 0 && TaggedArtificialMassCount > 0; } }
-        public bool Ready { get { return CoordinateFrameValid && ContributingGeneratorCount > 0 && ContributingMassCount > 0; } }
+        public bool Ready { get { return CoordinateFrameValid && HasTaggedDrivePair; } }
 
         public PhysicsEngineModel(
             bool coordinateFrameValid,
@@ -486,39 +437,15 @@
         {
             CoordinateFrameValid = coordinateFrameValid;
             ReferenceControllerName = referenceControllerName;
-            GravityGenerators = AssignDebugIds(gravityGenerators, "GEN");
-            ArtificialMass = AssignDebugIds(artificialMass, "MASS");
-        }
-
-        static List<HardwareBlockMetadata> AssignDebugIds(List<HardwareBlockMetadata> source, string prefix)
-        {
-            List<HardwareBlockMetadata> sorted = new List<HardwareBlockMetadata>(source);
-            sorted.Sort((a, b) => a.EntityId.CompareTo(b.EntityId));
-            for (int i = 0; i < sorted.Count; i++)
-                sorted[i] = sorted[i].WithDebugId(prefix, i + 1);
-            return sorted;
-        }
-
-        static int CountContributing(List<HardwareBlockMetadata> blocks)
-        {
-            int count = 0;
-            for (int i = 0; i < blocks.Count; i++)
-                if (blocks[i].Contributing)
-                    count++;
-            return count;
+            GravityGenerators = gravityGenerators;
+            ArtificialMass = artificialMass;
         }
     }
 
     sealed class CapabilityAnalysis
     {
-        static readonly string[] Axes = new string[] { "Forward", "Backward", "Left", "Right", "Up", "Down" };
-
         public CapabilitySnapshot Evaluate(PhysicsEngineModel model)
         {
-            List<AxisCapability> axes = new List<AxisCapability>();
-            for (int i = 0; i < Axes.Length; i++)
-                axes.Add(EvaluateAxis(Axes[i], model));
-
             List<string> findings = new List<string>();
             if (!model.CoordinateFrameValid)
                 findings.Add("invalid coordinate frame");
@@ -526,57 +453,13 @@
                 findings.Add("no AAC-tagged generators");
             if (model.TaggedArtificialMassCount == 0)
                 findings.Add("no AAC-tagged artificial mass");
-            for (int i = 0; i < axes.Count; i++)
-                if (!axes[i].Ready)
-                    findings.Add(axes[i].Axis + ": " + axes[i].Reason);
 
             string status = findings.Count == 0 ? "OPERATIONAL" : "LIMITED";
             string message = findings.Count == 0
-                ? "dynamic PEM capability groups ready for monitor-only validation"
+                ? "tagged PEM ready for future solver input"
                 : JoinFindings(findings);
 
-            return new CapabilitySnapshot(status, message, model.Ready, axes);
-        }
-
-        AxisCapability EvaluateAxis(string axis, PhysicsEngineModel model)
-        {
-            int generatorCount = 0;
-            int toleranceCount = 0;
-            int invalidForAxis = 0;
-
-            for (int i = 0; i < model.GravityGenerators.Count; i++)
-            {
-                HardwareBlockMetadata generator = model.GravityGenerators[i];
-                if (string.Equals(generator.GravityProjectionAxis, axis, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (generator.Contributing)
-                        generatorCount++;
-                    else
-                        invalidForAxis++;
-                }
-            }
-
-            toleranceCount = generatorCount > 0 ? generatorCount - 1 : 0;
-
-            string reason = "READY";
-            bool ready = true;
-            if (!model.CoordinateFrameValid)
-            {
-                ready = false;
-                reason = "Invalid coordinate frame";
-            }
-            else if (model.ContributingMassCount == 0)
-            {
-                ready = false;
-                reason = "No contributing artificial mass";
-            }
-            else if (generatorCount == 0)
-            {
-                ready = false;
-                reason = invalidForAxis > 0 ? "Generators not validated" : "No contributing generators";
-            }
-
-            return new AxisCapability(axis, ready, generatorCount, toleranceCount, reason);
+            return new CapabilitySnapshot(status, message, model.Ready);
         }
 
         static string JoinFindings(List<string> findings)
@@ -592,37 +475,17 @@
         }
     }
 
-    sealed class AxisCapability
-    {
-        public readonly string Axis;
-        public readonly bool Ready;
-        public readonly int GeneratorCount;
-        public readonly int ToleranceCount;
-        public readonly string Reason;
-
-        public AxisCapability(string axis, bool ready, int generatorCount, int toleranceCount, string reason)
-        {
-            Axis = axis;
-            Ready = ready;
-            GeneratorCount = generatorCount;
-            ToleranceCount = toleranceCount;
-            Reason = reason;
-        }
-    }
-
     sealed class CapabilitySnapshot
     {
         public readonly string Status;
         public readonly string Message;
         public readonly bool PemReady;
-        public readonly List<AxisCapability> Axes;
 
-        public CapabilitySnapshot(string status, string message, bool pemReady, List<AxisCapability> axes)
+        public CapabilitySnapshot(string status, string message, bool pemReady)
         {
             Status = status;
             Message = message;
             PemReady = pemReady;
-            Axes = axes;
         }
     }
 
@@ -634,31 +497,18 @@
             "Overview",
             "Discovery",
             "PEM Summary",
+            "Generator Inspector",
+            "Artificial Mass Inspector",
             "Capability Analysis",
             "Performance Placeholder"
         };
         bool _enabled;
         int _pageIndex;
-        string _inspector = "";
-        int _inspectorIndex;
 
         public bool Enabled { get { return _enabled; } }
         public int PageIndex { get { return _pageIndex; } }
         public int PageCount { get { return _pages.Length; } }
-        public bool InspectingGenerators { get { return string.Equals(_inspector, "generators", StringComparison.OrdinalIgnoreCase); } }
-        public bool InspectingMass { get { return string.Equals(_inspector, "mass", StringComparison.OrdinalIgnoreCase); } }
-        public int InspectorIndex { get { return _inspectorIndex; } }
-        public string ActivePageName
-        {
-            get
-            {
-                if (InspectingGenerators)
-                    return "Generator Inspector";
-                if (InspectingMass)
-                    return "Artificial Mass Inspector";
-                return _pages[_pageIndex];
-            }
-        }
+        public string ActivePageName { get { return _pages[_pageIndex]; } }
 
         public void HandleCommand(string command)
         {
@@ -666,43 +516,57 @@
                 return;
 
             string normalized = command.Trim();
-            if (string.Equals(normalized, "debug on", StringComparison.OrdinalIgnoreCase)) { _enabled = true; return; }
-            if (string.Equals(normalized, "debug off", StringComparison.OrdinalIgnoreCase)) { _enabled = false; _inspector = ""; return; }
-            if (string.Equals(normalized, "debug generators", StringComparison.OrdinalIgnoreCase)) { _enabled = true; _inspector = "generators"; _inspectorIndex = 0; return; }
-            if (string.Equals(normalized, "debug mass", StringComparison.OrdinalIgnoreCase)) { _enabled = true; _inspector = "mass"; _inspectorIndex = 0; return; }
+            if (string.Equals(normalized, "debug on", StringComparison.OrdinalIgnoreCase))
+            {
+                _enabled = true;
+                return;
+            }
+            if (string.Equals(normalized, "debug off", StringComparison.OrdinalIgnoreCase))
+            {
+                _enabled = false;
+                return;
+            }
             if (string.Equals(normalized, "debug next", StringComparison.OrdinalIgnoreCase))
             {
-                if (_enabled && _inspector.Length > 0) _inspectorIndex++;
-                else if (_enabled) _pageIndex = (_pageIndex + 1) % _pages.Length;
+                if (_enabled)
+                    _pageIndex = (_pageIndex + 1) % _pages.Length;
                 return;
             }
             if (string.Equals(normalized, "debug prev", StringComparison.OrdinalIgnoreCase))
             {
-                if (_enabled && _inspector.Length > 0) _inspectorIndex = Math.Max(0, _inspectorIndex - 1);
-                else if (_enabled) _pageIndex = (_pageIndex + _pages.Length - 1) % _pages.Length;
+                if (_enabled)
+                    _pageIndex = (_pageIndex + _pages.Length - 1) % _pages.Length;
                 return;
             }
-            if (string.Equals(normalized, "debug discovery", StringComparison.OrdinalIgnoreCase)) { _enabled = true; _inspector = ""; _pageIndex = 1; return; }
-            if (string.Equals(normalized, "debug pem", StringComparison.OrdinalIgnoreCase)) { _enabled = true; _inspector = ""; _pageIndex = 2; return; }
-            if (string.Equals(normalized, "debug capability", StringComparison.OrdinalIgnoreCase)) { _enabled = true; _inspector = ""; _pageIndex = 3; return; }
-            if (string.Equals(normalized, "debug performance", StringComparison.OrdinalIgnoreCase)) { _enabled = true; _inspector = ""; _pageIndex = 4; }
-        }
-
-        public int ActiveOrdinal(int itemCount)
-        {
-            if (itemCount <= 0)
-                return 0;
-            if (_inspectorIndex >= itemCount)
-                _inspectorIndex = itemCount - 1;
-            return _inspectorIndex;
+            if (string.Equals(normalized, "debug discovery", StringComparison.OrdinalIgnoreCase))
+            {
+                _enabled = true;
+                _pageIndex = 1;
+                return;
+            }
+            if (string.Equals(normalized, "debug pem", StringComparison.OrdinalIgnoreCase))
+            {
+                _enabled = true;
+                _pageIndex = 2;
+                return;
+            }
+            if (string.Equals(normalized, "debug capability", StringComparison.OrdinalIgnoreCase))
+            {
+                _enabled = true;
+                _pageIndex = 5;
+                return;
+            }
+            if (string.Equals(normalized, "debug performance", StringComparison.OrdinalIgnoreCase))
+            {
+                _enabled = true;
+                _pageIndex = 6;
+            }
         }
 
         public string StatusLine()
         {
             if (!_enabled)
                 return "Debug: OFF";
-            if (_inspector.Length > 0)
-                return "Debug: " + ActivePageName + " (Item " + (_inspectorIndex + 1) + ")";
             return "Debug: " + ActivePageName + " (Page " + (_pageIndex + 1) + "/" + _pages.Length + ")";
         }
     }
@@ -820,16 +684,14 @@
             _builder.AppendLine("  Outputs   : monitor only");
             _builder.AppendLine();
             _builder.AppendLine("Physics Engine Model");
-            _builder.AppendLine("  Health    : " + (physicsEngineModel.Ready ? "READY" : "LIMITED"));
-            _builder.AppendLine("  Gen D/T/C/N: " + FormatCount(hardware.GravityGeneratorCount) + "/" + FormatCount(physicsEngineModel.TaggedGravityGeneratorCount) + "/" + FormatCount(physicsEngineModel.ContributingGeneratorCount) + "/" + FormatCount(physicsEngineModel.NonContributingGeneratorCount));
-            _builder.AppendLine("  AM  D/T/C/N: " + FormatCount(hardware.ArtificialMassCount) + "/" + FormatCount(physicsEngineModel.TaggedArtificialMassCount) + "/" + FormatCount(physicsEngineModel.ContributingMassCount) + "/" + FormatCount(physicsEngineModel.NonContributingMassCount));
+            _builder.AppendLine("  PEM Ready : " + YesNo(physicsEngineModel.Ready));
+            _builder.AppendLine("  Tagged Gen: " + FormatCount(physicsEngineModel.TaggedGravityGeneratorCount));
+            _builder.AppendLine("  Tagged AM : " + FormatCount(physicsEngineModel.TaggedArtificialMassCount));
             _builder.AppendLine("  Coords    : " + (physicsEngineModel.CoordinateFrameValid ? "VALID" : "INVALID"));
             _builder.AppendLine("  Reference : " + ShortName(physicsEngineModel.ReferenceControllerName, 18));
             _builder.AppendLine();
             _builder.AppendLine("Capability Analysis");
             _builder.AppendLine("  Status    : " + capability.Status);
-            _builder.AppendLine("  Redundancy:");
-            AppendAxisSummary(_builder, capability);
             _builder.AppendLine("  Control Output: LOCKED");
             AppendWrapped(_builder, capability.Message, "  ", 26);
             _builder.AppendLine();
@@ -859,12 +721,6 @@
             _builder.AppendLine(_debugManager.StatusLine());
             _builder.AppendLine("----------------------------");
 
-            if (_debugManager.InspectingGenerators)
-                AppendBlockInspector(_builder, "Generator Inspector", physicsEngineModel.GravityGenerators, true);
-            else if (_debugManager.InspectingMass)
-                AppendBlockInspector(_builder, "Artificial Mass Inspector", physicsEngineModel.ArtificialMass, false);
-            else
-            {
             int page = _debugManager.PageIndex;
             if (page == 0)
                 AppendDebugOverview(_builder, hardware, diagnostic, physicsEngineModel, capability);
@@ -873,10 +729,13 @@
             else if (page == 2)
                 AppendDebugPemSummary(_builder, physicsEngineModel);
             else if (page == 3)
+                AppendBlockInspector(_builder, "Generator Inspector", physicsEngineModel.GravityGenerators);
+            else if (page == 4)
+                AppendBlockInspector(_builder, "Artificial Mass Inspector", physicsEngineModel.ArtificialMass);
+            else if (page == 5)
                 AppendDebugCapability(_builder, capability);
             else
                 AppendDebugPerformance(_builder, tickCount);
-            }
 
             return _builder.ToString();
         }
@@ -912,36 +771,28 @@
             builder.AppendLine("  Ready     : " + YesNo(model.Ready));
             builder.AppendLine("  Coords    : " + (model.CoordinateFrameValid ? "VALID" : "INVALID"));
             builder.AppendLine("  Reference : " + ShortName(model.ReferenceControllerName, 18));
-            builder.AppendLine("  Gen T/C/N : " + FormatCount(model.TaggedGravityGeneratorCount) + "/" + FormatCount(model.ContributingGeneratorCount) + "/" + FormatCount(model.NonContributingGeneratorCount));
-            builder.AppendLine("  AM  T/C/N : " + FormatCount(model.TaggedArtificialMassCount) + "/" + FormatCount(model.ContributingMassCount) + "/" + FormatCount(model.NonContributingMassCount));
+            builder.AppendLine("  Tagged Gen: " + FormatCount(model.TaggedGravityGeneratorCount));
+            builder.AppendLine("  Tagged AM : " + FormatCount(model.TaggedArtificialMassCount));
         }
 
-        void AppendBlockInspector(StringBuilder builder, string title, List<HardwareBlockMetadata> blocks, bool generator)
+        void AppendBlockInspector(StringBuilder builder, string title, List<HardwareBlockMetadata> blocks)
         {
             builder.AppendLine(title);
             builder.AppendLine("  Count: " + FormatCount(blocks.Count));
-            if (blocks.Count == 0)
+            int max = Math.Min(blocks.Count, 6);
+            if (max == 0)
             {
                 builder.AppendLine("  none");
                 return;
             }
-            int index = _debugManager.ActiveOrdinal(blocks.Count);
-            HardwareBlockMetadata block = blocks[index];
-            builder.AppendLine("  Page: " + (index + 1) + "/" + blocks.Count);
-            builder.AppendLine("  Stable Debug ID : " + block.DebugId);
-            builder.AppendLine("  Entity ID       : " + block.EntityId);
-            builder.AppendLine("  Custom Name     : " + ShortName(block.CustomName, 28));
-            builder.AppendLine("  Mount Position  : " + block.MountPosition);
-            if (generator)
+            for (int i = 0; i < max; i++)
             {
-                builder.AppendLine("  Block Orient.   : " + block.BlockOrientation);
-                builder.AppendLine("  Gravity Axis    : " + block.GravityProjectionAxis);
+                HardwareBlockMetadata block = blocks[i];
+                builder.AppendLine("  #" + (i + 1).ToString("00") + " " + ShortName(block.CustomName, 40));
+                builder.AppendLine("     Dir " + block.ShipDirection + " Dist " + block.DistanceFromController.ToString("0.0"));
             }
-            builder.AppendLine("  Distance        : " + block.DistanceFromController.ToString("0.0"));
-            builder.AppendLine("  Enabled         : " + YesNo(block.Enabled));
-            builder.AppendLine("  Working         : " + YesNo(block.Working));
-            builder.AppendLine("  Validated       : " + YesNo(block.Validated));
-            builder.AppendLine("  Contributing    : " + YesNo(block.Contributing));
+            if (blocks.Count > max)
+                builder.AppendLine("  +" + (blocks.Count - max) + " more");
         }
 
         void AppendDebugCapability(StringBuilder builder, CapabilitySnapshot capability)
@@ -950,22 +801,8 @@
             builder.AppendLine("  Status    : " + capability.Status);
             builder.AppendLine("  PEM Ready : " + YesNo(capability.PemReady));
             builder.AppendLine("  Output    : LOCKED");
-            builder.AppendLine("  Axes:");
-            AppendAxisSummary(builder, capability);
             builder.AppendLine("  Message:");
             AppendWrapped(builder, capability.Message, "    ", 24);
-        }
-
-
-        void AppendAxisSummary(StringBuilder builder, CapabilitySnapshot capability)
-        {
-            for (int i = 0; i < capability.Axes.Count; i++)
-            {
-                AxisCapability axis = capability.Axes[i];
-                builder.AppendLine("    " + axis.Axis + " READY " + YesNo(axis.Ready) + " Gen " + FormatCount(axis.GeneratorCount) + " Tol " + FormatCount(axis.ToleranceCount));
-                if (!axis.Ready)
-                    builder.AppendLine("      " + axis.Reason);
-            }
         }
 
         void AppendDebugPerformance(StringBuilder builder, int tickCount)
