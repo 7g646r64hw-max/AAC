@@ -1,17 +1,17 @@
 /*
 ===============================================================================
  Adaptive Antigravity Controller (AAC)
- Version: 0.3.0.1
+ Version: 0.3.5
  Project Lead: Nomaddison
  Development Assistance: OpenAI ChatGPT
 
- MILESTONE 3 PEM CAPABILITY ASSESSMENT
+ MILESTONE 3.5 ENGINEERING CONSOLE REFINEMENT
  Self-contained Space Engineers Programmable Block script.  Controller remains
  monitor-only: no propulsion, alarm, or lighting outputs are written.
 ===============================================================================
 */
 
-    const string Version = "0.3.0.1";
+    const string Version = "0.3.5";
     const string SystemTag = "[AAC]";
 
     readonly Configuration _configuration;
@@ -21,6 +21,7 @@
     readonly CapabilityAnalysis _capabilityAnalysis;
     readonly DebugManager _debugManager;
     readonly DisplayManager _displayManager;
+    readonly PerformanceMonitor _performanceMonitor;
     readonly AacCore _core;
 
     public Program()
@@ -33,7 +34,8 @@
         _capabilityAnalysis = new CapabilityAnalysis();
         _debugManager = new DebugManager();
         _displayManager = new DisplayManager(GridTerminalSystem, Me, _configuration, _eventLogger, _debugManager, Echo);
-        _core = new AacCore(Version, _hardwareDiscovery, _pemBuilder, _capabilityAnalysis, _debugManager, _displayManager, _eventLogger);
+        _performanceMonitor = new PerformanceMonitor();
+        _core = new AacCore(Version, _hardwareDiscovery, _pemBuilder, _capabilityAnalysis, _debugManager, _displayManager, _eventLogger, _performanceMonitor);
         _eventLogger.Record(0, "AAC boot: Milestone 3 monitor-only PEM online.");
         _core.Tick("boot");
     }
@@ -55,9 +57,10 @@
         readonly DebugManager _debugManager;
         readonly DisplayManager _displayManager;
         readonly EventLogger _eventLogger;
+        readonly PerformanceMonitor _performanceMonitor;
         int _tickCount;
 
-        public AacCore(string version, HardwareDiscovery hardwareDiscovery, PhysicsEngineModelBuilder pemBuilder, CapabilityAnalysis capabilityAnalysis, DebugManager debugManager, DisplayManager displayManager, EventLogger eventLogger)
+        public AacCore(string version, HardwareDiscovery hardwareDiscovery, PhysicsEngineModelBuilder pemBuilder, CapabilityAnalysis capabilityAnalysis, DebugManager debugManager, DisplayManager displayManager, EventLogger eventLogger, PerformanceMonitor performanceMonitor)
         {
             _version = version;
             _hardwareDiscovery = hardwareDiscovery;
@@ -66,17 +69,25 @@
             _debugManager = debugManager;
             _displayManager = displayManager;
             _eventLogger = eventLogger;
+            _performanceMonitor = performanceMonitor;
         }
 
         public void Tick(string command)
         {
             _tickCount++;
+            DateTime scanStart = DateTime.UtcNow;
             HardwareSnapshot hardware = _hardwareDiscovery.Scan();
+            double scanMs = (DateTime.UtcNow - scanStart).TotalMilliseconds;
+            DateTime pemStart = DateTime.UtcNow;
             PhysicsEngineModel pem = _pemBuilder.Build(hardware);
+            double pemMs = (DateTime.UtcNow - pemStart).TotalMilliseconds;
+            DateTime capStart = DateTime.UtcNow;
             CapabilitySnapshot capability = _capabilityAnalysis.Evaluate(pem);
+            double capMs = (DateTime.UtcNow - capStart).TotalMilliseconds;
+            _performanceMonitor.Capture(scanMs, pemMs, capMs);
             _debugManager.HandleCommand(command, pem);
             if (IsManualRescan(command)) _eventLogger.Record(_tickCount, "Manual rescan requested.");
-            _displayManager.Render(_version, _tickCount, hardware, pem, capability);
+            _displayManager.Render(_version, _tickCount, hardware, pem, capability, _performanceMonitor);
         }
 
         static bool IsManualRescan(string command)
@@ -175,10 +186,10 @@
 
     sealed class PemBlock
     {
-        public readonly long EntityId; public readonly string StableId, CustomName, MountPosition, Orientation, GravityAxis, Validation, Kind;
+        public readonly long EntityId; public readonly string StableId, CustomName, MountPosition, Orientation, GravityAxis, Validation, Kind, DistanceText;
         public readonly bool Tagged, Enabled, Working, Contributing; public readonly Vector3D WorldPosition; public readonly ShipAxis MountAxis, ProjectionAxis;
-        public PemBlock(string kind, long entityId, string stableId, string customName, bool tagged, bool enabled, bool working, Vector3D worldPosition, ShipAxis mountAxis, ShipAxis projectionAxis, string mountPosition, string orientation, string gravityAxis, string validation, bool contributing)
-        { Kind = kind; EntityId = entityId; StableId = stableId; CustomName = customName; Tagged = tagged; Enabled = enabled; Working = working; WorldPosition = worldPosition; MountAxis = mountAxis; ProjectionAxis = projectionAxis; MountPosition = mountPosition; Orientation = orientation; GravityAxis = gravityAxis; Validation = validation; Contributing = contributing; }
+        public PemBlock(string kind, long entityId, string stableId, string customName, bool tagged, bool enabled, bool working, Vector3D worldPosition, ShipAxis mountAxis, ShipAxis projectionAxis, string mountPosition, string orientation, string gravityAxis, string validation, bool contributing, string distanceText)
+        { Kind = kind; EntityId = entityId; StableId = stableId; CustomName = customName; Tagged = tagged; Enabled = enabled; Working = working; WorldPosition = worldPosition; MountAxis = mountAxis; ProjectionAxis = projectionAxis; MountPosition = mountPosition; Orientation = orientation; GravityAxis = gravityAxis; Validation = validation; Contributing = contributing; DistanceText = distanceText; }
         public static PemBlock FromBlock(IMyTerminalBlock block, bool tagged, bool frameValid, MatrixD frame, bool generator)
         {
             Vector3D pos = block.GetPosition();
@@ -187,8 +198,9 @@
             bool enabled = true; IMyFunctionalBlock functional = block as IMyFunctionalBlock; if (functional != null) enabled = functional.Enabled;
             bool working = block.IsWorking;
             string validation = !frameValid ? "INVALID_FRAME" : !tagged ? "NOT_TAGGED" : !enabled ? "DISABLED" : !working ? "NOT_WORKING" : "READY";
-            return new PemBlock(generator ? "GEN" : "MASS", block.EntityId, StableIdFor(block), block.CustomName, tagged, enabled, working, pos, mount, projection, AxisName(mount), OrientationName(block.WorldMatrix, frame, frameValid), AxisName(projection), validation, validation == "READY");
+            return new PemBlock(generator ? "GEN" : "MASS", block.EntityId, StableIdFor(block), block.CustomName, tagged, enabled, working, pos, mount, projection, AxisName(mount), OrientationName(block.WorldMatrix, frame, frameValid), AxisName(projection), validation, validation == "READY", DistanceFromFrame(pos, frame, frameValid));
         }
+        static string DistanceFromFrame(Vector3D pos, MatrixD frame, bool valid) { return valid ? Vector3D.Distance(pos, frame.Translation).ToString("0.0") + " m" : "unknown"; }
         static string StableIdFor(IMyTerminalBlock block) { string id = Math.Abs(block.EntityId % 1000000).ToString("000000"); return block.GetType().Name + ":" + id; }
         static ShipAxis AxisFromVector(Vector3D vector, MatrixD frame)
         {
@@ -246,51 +258,76 @@
 
     sealed class DebugManager
     {
-        readonly string[] _summaryPages = new string[] { "Overview", "Discovery", "PEM Summary", "Capability Analysis", "Performance" };
-        bool _enabled; string _inspector = "summary"; int _pageIndex; int _itemIndex;
-        public bool Enabled { get { return _enabled; } } public string Inspector { get { return _inspector; } } public int PageIndex { get { return _pageIndex; } } public int ItemIndex { get { return _itemIndex; } }
-        public string ActivePageName { get { return _inspector == "generators" ? "Generator " + (_itemIndex + 1) : _inspector == "mass" ? "Mass " + (_itemIndex + 1) : _summaryPages[_pageIndex]; } }
+        public const string SectionStatus = "status";
+        public const string SectionDiscovery = "discovery";
+        public const string SectionPem = "pem";
+        public const string SectionCapability = "capability";
+        public const string SectionGenerators = "generators";
+        public const string SectionMass = "mass";
+        public const string SectionPerformance = "performance";
+        bool _enabled; string _section = SectionStatus; int _pageIndex;
+        public bool Enabled { get { return _enabled; } } public string Section { get { return _section; } } public int PageIndex { get { return _pageIndex; } }
         public void HandleCommand(string command, PhysicsEngineModel pem)
         {
             if (string.IsNullOrWhiteSpace(command)) return; string n = command.Trim();
-            if (Eq(n, "debug on")) { _enabled = true; return; } if (Eq(n, "debug off")) { _enabled = false; return; }
-            if (Eq(n, "debug generators") || Eq(n, "debug gen")) { _enabled = true; _inspector = "generators"; _itemIndex = Clamp(_itemIndex, CountFor(pem)); return; }
-            if (Eq(n, "debug mass")) { _enabled = true; _inspector = "mass"; _itemIndex = Clamp(_itemIndex, CountFor(pem)); return; }
-            if (Eq(n, "debug summary")) { _enabled = true; _inspector = "summary"; return; }
-            if (Eq(n, "debug pem")) { _enabled = true; _inspector = "summary"; _pageIndex = 2; return; } if (Eq(n, "debug capability")) { _enabled = true; _inspector = "summary"; _pageIndex = 3; return; }
-            if (Eq(n, "debug next")) Next(pem); if (Eq(n, "debug prev")) Prev(pem);
+            if (Eq(n, "debug off")) { _enabled = false; _section = SectionStatus; _pageIndex = 0; return; }
+            if (Eq(n, "debug disc")) { Enter(SectionDiscovery, 0); return; }
+            if (Eq(n, "debug pem")) { Enter(SectionPem, 0); return; }
+            if (Eq(n, "debug cap") || Eq(n, "debug capability")) { Enter(SectionCapability, 0); return; }
+            if (Eq(n, "debug gen") || Eq(n, "debug generators")) { Enter(SectionGenerators, Clamp(_pageIndex, pem.GravityGenerators.Count)); return; }
+            if (Eq(n, "debug mass")) { Enter(SectionMass, Clamp(_pageIndex, pem.ArtificialMass.Count)); return; }
+            if (Eq(n, "debug perf")) { Enter(SectionPerformance, 0); return; }
+            if (Eq(n, "debug next")) Next(pem);
+            if (Eq(n, "debug prev")) Prev(pem);
         }
-        void Next(PhysicsEngineModel pem) { if (!_enabled) return; if (_inspector == "summary") _pageIndex = (_pageIndex + 1) % _summaryPages.Length; else _itemIndex = (CountFor(pem) == 0 ? 0 : (_itemIndex + 1) % CountFor(pem)); }
-        void Prev(PhysicsEngineModel pem) { if (!_enabled) return; if (_inspector == "summary") _pageIndex = (_pageIndex + _summaryPages.Length - 1) % _summaryPages.Length; else { int c = CountFor(pem); _itemIndex = c == 0 ? 0 : (_itemIndex + c - 1) % c; } }
-        int CountFor(PhysicsEngineModel pem) { return _inspector == "generators" ? pem.GravityGenerators.Count : _inspector == "mass" ? pem.ArtificialMass.Count : _summaryPages.Length; }
+        void Enter(string section, int page) { _enabled = true; _section = section; _pageIndex = page; }
+        void Next(PhysicsEngineModel pem) { if (!_enabled) return; int c = CountFor(pem); _pageIndex = c <= 1 ? 0 : (_pageIndex + 1) % c; }
+        void Prev(PhysicsEngineModel pem) { if (!_enabled) return; int c = CountFor(pem); _pageIndex = c <= 1 ? 0 : (_pageIndex + c - 1) % c; }
+        int CountFor(PhysicsEngineModel pem) { if (_section == SectionCapability) return 6; if (_section == SectionGenerators) return pem.GravityGenerators.Count; if (_section == SectionMass) return pem.ArtificialMass.Count; return 1; }
         int Clamp(int value, int count) { if (count <= 0) return 0; return value >= count ? count - 1 : value; }
         static bool Eq(string a, string b) { return string.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
-        public string StatusLine() { return !_enabled ? "Debug: OFF" : "Debug: " + ActivePageName; }
+    }
+
+    sealed class PerformanceMonitor
+    {
+        double _lastScanMs, _averageScanMs, _pemBuildMs, _capabilityMs; int _samples;
+        public double LastScanMs { get { return _lastScanMs; } } public double AverageScanMs { get { return _averageScanMs; } } public double PemBuildMs { get { return _pemBuildMs; } } public double CapabilityMs { get { return _capabilityMs; } }
+        public void Capture(double scanMs, double pemBuildMs, double capabilityMs) { _lastScanMs = scanMs; _pemBuildMs = pemBuildMs; _capabilityMs = capabilityMs; _samples++; _averageScanMs = _samples == 1 ? scanMs : ((_averageScanMs * (_samples - 1)) + scanMs) / _samples; }
     }
 
     sealed class DisplayManager
     {
         readonly IMyGridTerminalSystem _gridTerminalSystem; readonly IMyProgrammableBlock _me; readonly Configuration _configuration; readonly EventLogger _eventLogger; readonly DebugManager _debugManager; readonly List<IMyTextPanel> _panels = new List<IMyTextPanel>(); readonly StringBuilder _builder = new StringBuilder(); readonly Action<string> _echo;
         public DisplayManager(IMyGridTerminalSystem gridTerminalSystem, IMyProgrammableBlock me, Configuration configuration, EventLogger eventLogger, DebugManager debugManager, Action<string> echo) { _gridTerminalSystem = gridTerminalSystem; _me = me; _configuration = configuration; _eventLogger = eventLogger; _debugManager = debugManager; _echo = echo; }
-        public void Render(string version, int tick, HardwareSnapshot hardware, PhysicsEngineModel pem, CapabilitySnapshot capability)
+        public void Render(string version, int tick, HardwareSnapshot hardware, PhysicsEngineModel pem, CapabilitySnapshot capability, PerformanceMonitor performance)
         {
             WriteSurface(_configuration.FlightDisplayTag, BuildFlightText(version, tick, hardware, pem));
             WriteSurface(_configuration.MaintenanceDisplayTag, BuildMaintenanceText(version, tick, hardware, pem));
-            WriteSurface(_configuration.EngineeringDisplayTag, _debugManager.Enabled ? BuildDebugText(version, tick, hardware, pem, capability) : BuildEngineeringText(version, tick, hardware, pem, capability));
+            WriteSurface(_configuration.EngineeringDisplayTag, _debugManager.Enabled ? BuildConsoleDebugText(hardware, pem, capability, performance) : BuildConsoleStatusText(pem, capability));
             EchoSummary(version, tick, hardware, pem);
         }
         string BuildFlightText(string version, int tick, HardwareSnapshot hardware, PhysicsEngineModel pem) { _builder.Clear(); _builder.AppendLine("AAC FLIGHT"); _builder.AppendLine("v" + version + "  MONITOR ONLY"); _builder.AppendLine("POST : " + pem.OverallHealth); _builder.AppendLine("CTRL : " + ShortName(hardware.PrimaryControllerName, 20)); _builder.AppendLine("READY: " + ReadyAxes(pem) + "/6 axes"); _builder.AppendLine("GEN/MASS: " + pem.ContributingGeneratorCount + "/" + pem.ContributingMassCount); _builder.AppendLine("TICK : " + FormatTick(tick)); return _builder.ToString(); }
         string BuildMaintenanceText(string version, int tick, HardwareSnapshot hardware, PhysicsEngineModel pem) { _builder.Clear(); _builder.AppendLine("AAC MAINTENANCE"); _builder.AppendLine("v" + version + "  MONITOR ONLY"); _builder.AppendLine("Tick " + FormatTick(tick)); _builder.AppendLine("Health    : " + pem.OverallHealth); _builder.AppendLine("Controller: " + (hardware.CoordinateFrameValid ? "YES" : "NO")); _builder.AppendLine("Detected Gen/Mass: " + hardware.GravityGeneratorCount + "/" + hardware.ArtificialMassCount); _builder.AppendLine("Tagged   Gen/Mass: " + pem.TaggedGravityGeneratorCount + "/" + pem.TaggedArtificialMassCount); _builder.AppendLine("Contrib. Gen/Mass: " + pem.ContributingGeneratorCount + "/" + pem.ContributingMassCount); _builder.AppendLine("Non-Contributing : " + pem.NonContributingCount); AppendRedundancy(_builder, pem); _eventLogger.AppendTo(_builder); return _builder.ToString(); }
-        string BuildEngineeringText(string version, int tick, HardwareSnapshot hardware, PhysicsEngineModel pem, CapabilitySnapshot cap) { _builder.Clear(); _builder.AppendLine("AAC ENGINEERING"); _builder.AppendLine("v" + version + "  MONITOR ONLY"); AppendPemSummary(_builder, pem); _builder.AppendLine("Capability: " + cap.Status); AppendWrapped(_builder, cap.Message, "  ", 30); return _builder.ToString(); }
-        string BuildDebugText(string version, int tick, HardwareSnapshot hardware, PhysicsEngineModel pem, CapabilitySnapshot cap) { _builder.Clear(); _builder.AppendLine("AAC DEBUG"); _builder.AppendLine("v" + version + "  MONITOR ONLY"); _builder.AppendLine("Tick " + FormatTick(tick)); _builder.AppendLine(_debugManager.StatusLine()); _builder.AppendLine("----------------------------"); if (_debugManager.Inspector == "generators") AppendComponent(_builder, pem.GravityGenerators, _debugManager.ItemIndex); else if (_debugManager.Inspector == "mass") AppendComponent(_builder, pem.ArtificialMass, _debugManager.ItemIndex); else if (_debugManager.PageIndex == 0) AppendPemSummary(_builder, pem); else if (_debugManager.PageIndex == 1) AppendDiscovery(_builder, hardware); else if (_debugManager.PageIndex == 2) AppendPemSummary(_builder, pem); else if (_debugManager.PageIndex == 3) { _builder.AppendLine("Capability Analysis"); _builder.AppendLine("  Status: " + cap.Status); _builder.AppendLine("  READY axes: " + cap.ReadyAxisCount); AppendRedundancy(_builder, pem); } else { _builder.AppendLine("Performance"); _builder.AppendLine("  Cadence: Update100"); _builder.AppendLine("  Output : read-only"); } return _builder.ToString(); }
-        void AppendDiscovery(StringBuilder b, HardwareSnapshot h) { b.AppendLine("Discovery"); b.AppendLine("  Controllers : " + h.ControllerCount); b.AppendLine("  Gravity Gen : " + h.GravityGeneratorCount); b.AppendLine("  Art. Mass   : " + h.ArtificialMassCount); b.AppendLine("  Text LCDs   : " + h.TextPanelCount); b.AppendLine("  Alarms/Lights: " + h.AlarmCount + "/" + h.WarningLightCount); }
-        void AppendPemSummary(StringBuilder b, PhysicsEngineModel p) { b.AppendLine("PEM Summary"); b.AppendLine("  Health    : " + p.OverallHealth); b.AppendLine("  Reference : " + ShortName(p.ReferenceControllerName, 18)); b.AppendLine("  Frame     : " + (p.CoordinateFrameValid ? "VALID" : "INVALID")); b.AppendLine("  Detected  : " + p.DetectedGeneratorCount + " Gen / " + p.DetectedMassCount + " Mass"); b.AppendLine("  Tagged    : " + p.TaggedGravityGeneratorCount + " Gen / " + p.TaggedArtificialMassCount + " Mass"); b.AppendLine("  Contrib.  : " + p.ContributingGeneratorCount + " Gen / " + p.ContributingMassCount + " Mass"); b.AppendLine("  Non-Contrib: " + p.NonContributingCount); AppendRedundancy(b, p); }
+        string BuildConsoleStatusText(PhysicsEngineModel pem, CapabilitySnapshot cap) { _builder.Clear(); _builder.AppendLine("AAC CONSOLE"); _builder.AppendLine("Status"); _builder.AppendLine("Status : " + AttentionStatus(pem)); _builder.AppendLine("Overall: " + pem.OverallHealth); _builder.AppendLine("Axes READY: " + cap.ReadyAxisCount + "/6"); _builder.AppendLine("Warnings: " + WarningSummary(pem)); return _builder.ToString(); }
+        string BuildConsoleDebugText(HardwareSnapshot hardware, PhysicsEngineModel pem, CapabilitySnapshot cap, PerformanceMonitor perf) { _builder.Clear(); AppendDebugHeader(_builder, pem); if (_debugManager.Section == DebugManager.SectionDiscovery) AppendDiscovery(_builder, pem); else if (_debugManager.Section == DebugManager.SectionPem) AppendPem(_builder, pem); else if (_debugManager.Section == DebugManager.SectionCapability) AppendCapability(_builder, pem); else if (_debugManager.Section == DebugManager.SectionGenerators) AppendGenerator(_builder, pem.GravityGenerators, _debugManager.PageIndex); else if (_debugManager.Section == DebugManager.SectionMass) AppendMass(_builder, pem.ArtificialMass, _debugManager.PageIndex); else if (_debugManager.Section == DebugManager.SectionPerformance) AppendPerformance(_builder, perf); else AppendConsoleStatusFields(_builder, pem, cap); return _builder.ToString(); }
+        void AppendDebugHeader(StringBuilder b, PhysicsEngineModel pem) { b.AppendLine("AAC CONSOLE  DEBUG"); if (_debugManager.Section == DebugManager.SectionCapability) b.AppendLine("Capability (" + PemBlock.AxisName((ShipAxis)_debugManager.PageIndex) + ") " + (_debugManager.PageIndex + 1) + "/6"); else if (_debugManager.Section == DebugManager.SectionGenerators) b.AppendLine("Generator Inspector " + PageCount(_debugManager.PageIndex, pem.GravityGenerators.Count)); else if (_debugManager.Section == DebugManager.SectionMass) b.AppendLine("Mass Inspector " + PageCount(_debugManager.PageIndex, pem.ArtificialMass.Count)); else if (_debugManager.Section == DebugManager.SectionDiscovery) b.AppendLine("Discovery"); else if (_debugManager.Section == DebugManager.SectionPem) b.AppendLine("PEM"); else if (_debugManager.Section == DebugManager.SectionPerformance) b.AppendLine("Performance"); else b.AppendLine("Status"); }
+        void AppendConsoleStatusFields(StringBuilder b, PhysicsEngineModel pem, CapabilitySnapshot cap) { b.AppendLine("Status : " + AttentionStatus(pem)); b.AppendLine("Overall: " + pem.OverallHealth); b.AppendLine("Axes READY: " + cap.ReadyAxisCount + "/6"); b.AppendLine("Warnings: " + WarningSummary(pem)); }
+        void AppendDiscovery(StringBuilder b, PhysicsEngineModel p) { b.AppendLine("Gravity Generators: " + p.DetectedGeneratorCount + " / " + p.TaggedGravityGeneratorCount); b.AppendLine("Artificial Mass   : " + p.DetectedMassCount + " / " + p.TaggedArtificialMassCount); }
+        void AppendPem(StringBuilder b, PhysicsEngineModel p) { b.AppendLine("Reference Controller: " + ShortName(p.ReferenceControllerName, 24)); b.AppendLine("Frame Validity      : " + (p.CoordinateFrameValid ? "VALID" : "INVALID")); b.AppendLine("Generator Contrib.  : " + p.ContributingGeneratorCount); b.AppendLine("Generator Non-Con.  : " + (p.GravityGenerators.Count - p.ContributingGeneratorCount)); b.AppendLine("Mass Contrib.       : " + p.ContributingMassCount); b.AppendLine("Mass Non-Con.       : " + (p.ArtificialMass.Count - p.ContributingMassCount)); }
+        void AppendCapability(StringBuilder b, PhysicsEngineModel p) { AxisCapability a = p.Axes[_debugManager.PageIndex]; b.AppendLine("State     : " + (a.Ready ? "READY" : "NOT READY")); b.AppendLine("Reason    : " + CapabilityReason(p, a)); b.AppendLine("Generators: " + a.GeneratorCount); b.AppendLine("Tolerance : " + a.Tolerance); }
+        void AppendGenerator(StringBuilder b, List<PemBlock> blocks, int index) { PemBlock x; if (!TryBlock(b, blocks, ref index, "No gravity generators.")) return; x = blocks[index]; b.AppendLine("Entity ID   : " + x.EntityId); b.AppendLine("Name        : " + ShortName(x.CustomName, 24)); b.AppendLine("Orientation : " + x.Orientation); b.AppendLine("Gravity Axis: " + x.GravityAxis); b.AppendLine("Distance    : " + x.DistanceText); b.AppendLine("Enabled     : " + YesNo(x.Enabled)); b.AppendLine("Working     : " + YesNo(x.Working)); b.AppendLine("Validated   : " + x.Validation); b.AppendLine("Contributing: " + YesNo(x.Contributing)); }
+        void AppendMass(StringBuilder b, List<PemBlock> blocks, int index) { PemBlock x; if (!TryBlock(b, blocks, ref index, "No artificial mass blocks.")) return; x = blocks[index]; b.AppendLine("Entity ID   : " + x.EntityId); b.AppendLine("Name        : " + ShortName(x.CustomName, 24)); b.AppendLine("Distance    : " + x.DistanceText); b.AppendLine("Enabled     : " + YesNo(x.Enabled)); b.AppendLine("Working     : " + YesNo(x.Working)); b.AppendLine("Validated   : " + x.Validation); b.AppendLine("Contributing: " + YesNo(x.Contributing)); }
+        void AppendPerformance(StringBuilder b, PerformanceMonitor p) { b.AppendLine("Last Scan                 : " + FormatMs(p.LastScanMs)); b.AppendLine("Average Scan              : " + FormatMs(p.AverageScanMs)); b.AppendLine("PEM Build Time            : " + FormatMs(p.PemBuildMs)); b.AppendLine("Capability Assessment Time: " + FormatMs(p.CapabilityMs)); }
+        bool TryBlock(StringBuilder b, List<PemBlock> blocks, ref int index, string none) { if (blocks.Count == 0) { b.AppendLine(none); return false; } if (index >= blocks.Count) index = blocks.Count - 1; if (index < 0) index = 0; return true; }
         void AppendRedundancy(StringBuilder b, PhysicsEngineModel p) { b.AppendLine("Redundancy"); for (int i = 0; i < p.Axes.Length; i++) { AxisCapability a = p.Axes[i]; b.AppendLine("  " + PemBlock.AxisName(a.Axis) + " " + (a.Ready ? "READY" : "NOT READY") + " Gen " + a.GeneratorCount + " Tol " + a.Tolerance); } }
-        void AppendComponent(StringBuilder b, List<PemBlock> blocks, int index) { if (blocks.Count == 0) { b.AppendLine("No components in inspector."); return; } if (index >= blocks.Count) index = blocks.Count - 1; PemBlock x = blocks[index]; b.AppendLine(x.Kind + " Component " + (index + 1) + "/" + blocks.Count); b.AppendLine("  ID     : " + x.StableId); b.AppendLine("  Name   : " + ShortName(x.CustomName, 26)); b.AppendLine("  Tagged : " + YesNo(x.Tagged)); b.AppendLine("  Enabled: " + YesNo(x.Enabled)); b.AppendLine("  Working: " + YesNo(x.Working)); b.AppendLine("  State  : " + x.Validation); b.AppendLine("  Contrib: " + YesNo(x.Contributing)); b.AppendLine("  Mount  : " + x.MountPosition); b.AppendLine("  Orient : " + x.Orientation); b.AppendLine("  GravAx : " + x.GravityAxis); }
+        string WarningSummary(PhysicsEngineModel p) { StringBuilder w = new StringBuilder(); if (!p.CoordinateFrameValid) AppendWarn(w, "PEM"); if (p.TaggedGravityGeneratorCount < p.DetectedGeneratorCount || p.ContributingGeneratorCount == 0) AppendWarn(w, "GEN"); if (p.TaggedArtificialMassCount < p.DetectedMassCount || p.ContributingMassCount == 0) AppendWarn(w, "MASS"); return w.Length == 0 ? "none" : "Hardware: " + w.ToString(); }
+        static void AppendWarn(StringBuilder b, string value) { if (b.Length > 0) b.Append(" "); b.Append("(").Append(value).Append(")"); }
+        static string AttentionStatus(PhysicsEngineModel p) { return p.Ready && p.NonContributingCount == 0 ? "OK" : "ATTENTION"; }
+        static string CapabilityReason(PhysicsEngineModel p, AxisCapability a) { if (!p.CoordinateFrameValid) return "Invalid frame"; if (a.GeneratorCount == 0) return "No contributing generator"; return "Axis has contributing generator"; }
         int ReadyAxes(PhysicsEngineModel p) { int c = 0; for (int i = 0; i < p.Axes.Length; i++) if (p.Axes[i].Ready) c++; return c; }
-        void EchoSummary(string version, int tick, HardwareSnapshot hardware, PhysicsEngineModel pem) { if (_echo == null) return; _builder.Clear(); _builder.AppendLine("AAC v" + version + " MONITOR ONLY"); _builder.AppendLine("Tick " + FormatTick(tick) + " " + pem.OverallHealth); _builder.AppendLine("Ctrl " + hardware.ControllerCount + " Gen " + hardware.GravityGeneratorCount + " Mass " + hardware.ArtificialMassCount); _builder.AppendLine(_debugManager.StatusLine()); _echo(_builder.ToString()); }
-        static string FormatTick(int value) { return value.ToString("00000"); } static string YesNo(bool value) { return value ? "YES" : "NO"; } static string ShortName(string value, int max) { if (string.IsNullOrEmpty(value)) return "none"; return value.Length <= max ? value : value.Substring(0, max - 3) + "..."; }
-        static void AppendWrapped(StringBuilder b, string text, string indent, int width) { if (string.IsNullOrEmpty(text)) { b.AppendLine(indent + "none"); return; } int i = 0; while (i < text.Length) { int take = Math.Min(width, text.Length - i); b.AppendLine(indent + text.Substring(i, take)); i += take; } }
+        void EchoSummary(string version, int tick, HardwareSnapshot hardware, PhysicsEngineModel pem) { if (_echo == null) return; _builder.Clear(); _builder.AppendLine("AAC v" + version + " MONITOR ONLY"); _builder.AppendLine("Tick " + FormatTick(tick) + " " + pem.OverallHealth); _builder.AppendLine("Ctrl " + hardware.ControllerCount + " Gen " + hardware.GravityGeneratorCount + " Mass " + hardware.ArtificialMassCount); _builder.AppendLine(_debugManager.Enabled ? "Console DEBUG" : "Console Status"); _echo(_builder.ToString()); }
+        static string PageCount(int index, int count) { return count == 0 ? "0/0" : (index + 1) + "/" + count; }
+        static string FormatTick(int value) { return value.ToString("00000"); } static string YesNo(bool value) { return value ? "YES" : "NO"; } static string ShortName(string value, int max) { if (string.IsNullOrEmpty(value)) return "none"; return value.Length <= max ? value : value.Substring(0, max - 3) + "..."; } static string FormatMs(double value) { return value.ToString("0.000") + " ms"; }
         void WriteSurface(string tag, string text) { _panels.Clear(); _gridTerminalSystem.GetBlocksOfType(_panels, p => p.IsSameConstructAs(_me) && p.CustomName.IndexOf(tag, StringComparison.OrdinalIgnoreCase) >= 0); for (int i = 0; i < _panels.Count; i++) { _panels[i].ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE; _panels[i].Font = "Debug"; _panels[i].FontSize = 0.65f; _panels[i].WriteText(text, false); } }
     }
 

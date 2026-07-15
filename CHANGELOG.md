@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.5
+
+- Implemented the Milestone 3.5 Engineering Console refinement.
+- Added canonical console commands: `debug disc`, `debug pem`, `debug cap`, `debug gen`, `debug mass`, `debug perf`, `debug next`, `debug prev`, and `debug off`.
+- Replaced the prior engineering standby page with the specified AAC Console Status page and subsystem-only warning summary.
+- Added one-page-per-axis Capability debug pages and Entity-ID-based generator and artificial-mass inspectors.
+- Added console performance fields for last scan, average scan, PEM build time, and capability assessment time.
+- Preserved verified v0.3.0.1 Hardware Discovery, PEM, Capability Assessment, engineering calculations, and monitor-only behavior.
+
+
 ## v0.3.0.1
 
 - Fixed capability assessment readiness so each axis reports READY when it has one or more validated contributing generators.

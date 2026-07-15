@@ -1,9 +1,13 @@
 # AAC Design Document
 
-## Milestone 3 Design
+## Milestone 3.5 Design
 
-Milestone 3 keeps the Milestone 2.5 architecture and extends it through the PEM. Discovery remains simple and non-authoritative: it only discovers blocks and counts LCD routes, alarms, and lights. The PEM converts discovered blocks into cached component records containing measured metadata and derived assessment data.
+Milestone 3.5 keeps the verified v0.3.0.1 engineering model intact and refines only the Engineering Console presentation. Discovery remains simple and non-authoritative: it discovers same-construct blocks and tag membership. The PEM converts discovered blocks into cached component records containing measured metadata and derived assessment data.
 
-Per-axis capability is dynamic. A ship axis is READY when at least one contributing gravity generator and one contributing artificial mass block project on that axis. Tolerance is calculated as the spare matched pair count for the axis.
+Per-axis capability remains PEM-driven. A ship axis is READY when the validated v0.3.0.1 capability calculation reports one or more contributing generators for that axis, with tolerance calculated as `max(0, contributing generator count - 1)`.
 
-Debug pages are read-only. Summary pages remain available, while generator and artificial-mass inspectors show one component per page and use `debug next` / `debug prev` within the active inspector.
+The Engineering Console follows the hierarchy Status → Discovery → PEM → Capability → Component Inspectors → Performance. The standby Status page answers whether AAC requires attention. Debug section commands enter their section immediately, and `debug next` / `debug prev` navigate only within that active section.
+
+Component inspectors show one generator or one artificial-mass block per page. Entity ID is the canonical identifier for physical components. Warnings on the Status page are intentionally subsystem-level only; component-level details belong in inspectors.
+
+Flight and Maintenance displays remain read-only and preserve the validated pilot and technician roles. AAC remains monitor-only and does not command gravity generators, artificial mass blocks, ship controllers, alarms, lights, or other outputs.
