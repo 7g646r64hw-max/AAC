@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.5-alpha.1
+
+- Bumped AAC release references from `v0.2.0-alpha.1` to `v0.2.5-alpha.1`.
+- Added a permanent read-only `DebugManager` for debug mode, direct debug page selection, and page navigation.
+- Added debug commands: `debug on`, `debug off`, `debug pem`, `debug discovery`, `debug capability`, `debug performance`, `debug next`, and `debug prev`.
+- Added Engineering LCD debug rendering while preserving normal Engineering LCD output when debug mode is off.
+- Added debug pages for overview, discovery, PEM summary, generator inspection, artificial mass inspection, capability analysis, and a performance placeholder.
+- Added a permanent programmable-block `Echo()` debug status line.
+- Preserved monitor-only operation, hardware discovery, PEM ownership rules, capability analysis, Flight LCD behavior, Maintenance LCD behavior, and `Control Output: LOCKED`.
+
 ## v0.2.0-alpha.1
 
 - Bumped AAC release references from `v0.1.1-alpha.1` to `v0.2.0-alpha.1`.
