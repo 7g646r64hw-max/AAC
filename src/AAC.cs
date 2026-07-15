@@ -893,7 +893,7 @@
             {
                 _panels[i].ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE;
                 _panels[i].Font = "Debug";
-                _panels[i].FontSize = 0.75f;
+                _panels[i].FontSize = 0.65f;
                 _panels[i].WriteText(text, false);
             }
         }
