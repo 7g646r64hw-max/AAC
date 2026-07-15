@@ -788,7 +788,7 @@
             for (int i = 0; i < max; i++)
             {
                 HardwareBlockMetadata block = blocks[i];
-                builder.AppendLine("  #" + (i + 1).ToString("00") + " " + ShortName(block.CustomName, 20));
+                builder.AppendLine("  #" + (i + 1).ToString("00") + " " + ShortName(block.CustomName, 40));
                 builder.AppendLine("     Dir " + block.ShipDirection + " Dist " + block.DistanceFromController.ToString("0.0"));
             }
             if (blocks.Count > max)
@@ -893,7 +893,7 @@
             {
                 _panels[i].ContentType = VRage.Game.GUI.TextPanel.ContentType.TEXT_AND_IMAGE;
                 _panels[i].Font = "Debug";
-                _panels[i].FontSize = 0.75f;
+                _panels[i].FontSize = 0.65f;
                 _panels[i].WriteText(text, false);
             }
         }
