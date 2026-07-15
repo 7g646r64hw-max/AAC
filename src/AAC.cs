@@ -1,18 +1,19 @@
 /*
 ===============================================================================
  Adaptive Antigravity Controller (AAC)
- Version: 0.2.0-alpha.1
+ Version: 0.2.5-alpha.1
  Project Lead: Nomaddison
  Development Assistance: OpenAI ChatGPT
 
- MILESTONE 2 PHYSICS ENGINE MODEL BUILD
- This script preserves the monitor-only Milestone 1 runtime shell while adding
- tagged-hardware metadata, a ship-relative Physics Engine Model, and capability
- analysis. Control outputs remain locked.
+ MILESTONE 2.5 DEBUG AND VALIDATION FRAMEWORK
+ This script preserves the monitor-only Milestone 2 PEM runtime while adding
+ a read-only DebugManager for validation pages, debug navigation, and a
+ permanent programmable-block Echo() debug status line. Control outputs remain
+ locked.
 ===============================================================================
 */
 
-    const string Version = "0.2.0-alpha.1";
+    const string Version = "0.2.5-alpha.1";
     const string SystemTag = "[AAC]";
 
     readonly Configuration _configuration;
@@ -21,6 +22,7 @@
     readonly Diagnostics _diagnostics;
     readonly PhysicsEngineModelBuilder _physicsEngineModelBuilder;
     readonly CapabilityAnalysis _capabilityAnalysis;
+    readonly DebugManager _debugManager;
     readonly DisplayManager _displayManager;
     readonly AacCore _core;
 
@@ -34,10 +36,11 @@
         _diagnostics = new Diagnostics();
         _physicsEngineModelBuilder = new PhysicsEngineModelBuilder();
         _capabilityAnalysis = new CapabilityAnalysis();
-        _displayManager = new DisplayManager(GridTerminalSystem, Me, _configuration, _eventLogger, Echo);
-        _core = new AacCore(Version, _hardwareDiscovery, _diagnostics, _physicsEngineModelBuilder, _capabilityAnalysis, _displayManager, _eventLogger);
+        _debugManager = new DebugManager();
+        _displayManager = new DisplayManager(GridTerminalSystem, Me, _configuration, _eventLogger, _debugManager, Echo);
+        _core = new AacCore(Version, _hardwareDiscovery, _diagnostics, _physicsEngineModelBuilder, _capabilityAnalysis, _debugManager, _displayManager, _eventLogger);
 
-        _eventLogger.Record(0, "AAC boot: monitor-only PEM foundation online.");
+        _eventLogger.Record(0, "AAC boot: monitor-only debug validation framework online.");
         _core.Tick("boot");
     }
 
@@ -53,6 +56,7 @@
         readonly Diagnostics _diagnostics;
         readonly PhysicsEngineModelBuilder _physicsEngineModelBuilder;
         readonly CapabilityAnalysis _capabilityAnalysis;
+        readonly DebugManager _debugManager;
         readonly DisplayManager _displayManager;
         readonly EventLogger _eventLogger;
         int _tickCount;
@@ -63,6 +67,7 @@
             Diagnostics diagnostics,
             PhysicsEngineModelBuilder physicsEngineModelBuilder,
             CapabilityAnalysis capabilityAnalysis,
+            DebugManager debugManager,
             DisplayManager displayManager,
             EventLogger eventLogger)
         {
@@ -71,6 +76,7 @@
             _diagnostics = diagnostics;
             _physicsEngineModelBuilder = physicsEngineModelBuilder;
             _capabilityAnalysis = capabilityAnalysis;
+            _debugManager = debugManager;
             _displayManager = displayManager;
             _eventLogger = eventLogger;
         }
@@ -83,6 +89,8 @@
             DiagnosticSnapshot diagnostic = _diagnostics.Evaluate(hardware);
             PhysicsEngineModel physicsEngineModel = _physicsEngineModelBuilder.Build(hardware);
             CapabilitySnapshot capability = _capabilityAnalysis.Evaluate(physicsEngineModel);
+
+            _debugManager.HandleCommand(command);
 
             if (IsManualRescan(command))
                 _eventLogger.Record(_tickCount, "Manual rescan requested.");
@@ -481,12 +489,95 @@
         }
     }
 
+
+    sealed class DebugManager
+    {
+        readonly string[] _pages = new string[]
+        {
+            "Overview",
+            "Discovery",
+            "PEM Summary",
+            "Generator Inspector",
+            "Artificial Mass Inspector",
+            "Capability Analysis",
+            "Performance Placeholder"
+        };
+        bool _enabled;
+        int _pageIndex;
+
+        public bool Enabled { get { return _enabled; } }
+        public int PageIndex { get { return _pageIndex; } }
+        public int PageCount { get { return _pages.Length; } }
+        public string ActivePageName { get { return _pages[_pageIndex]; } }
+
+        public void HandleCommand(string command)
+        {
+            if (string.IsNullOrWhiteSpace(command))
+                return;
+
+            string normalized = command.Trim();
+            if (string.Equals(normalized, "debug on", StringComparison.OrdinalIgnoreCase))
+            {
+                _enabled = true;
+                return;
+            }
+            if (string.Equals(normalized, "debug off", StringComparison.OrdinalIgnoreCase))
+            {
+                _enabled = false;
+                return;
+            }
+            if (string.Equals(normalized, "debug next", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_enabled)
+                    _pageIndex = (_pageIndex + 1) % _pages.Length;
+                return;
+            }
+            if (string.Equals(normalized, "debug prev", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_enabled)
+                    _pageIndex = (_pageIndex + _pages.Length - 1) % _pages.Length;
+                return;
+            }
+            if (string.Equals(normalized, "debug discovery", StringComparison.OrdinalIgnoreCase))
+            {
+                _enabled = true;
+                _pageIndex = 1;
+                return;
+            }
+            if (string.Equals(normalized, "debug pem", StringComparison.OrdinalIgnoreCase))
+            {
+                _enabled = true;
+                _pageIndex = 2;
+                return;
+            }
+            if (string.Equals(normalized, "debug capability", StringComparison.OrdinalIgnoreCase))
+            {
+                _enabled = true;
+                _pageIndex = 5;
+                return;
+            }
+            if (string.Equals(normalized, "debug performance", StringComparison.OrdinalIgnoreCase))
+            {
+                _enabled = true;
+                _pageIndex = 6;
+            }
+        }
+
+        public string StatusLine()
+        {
+            if (!_enabled)
+                return "Debug: OFF";
+            return "Debug: " + ActivePageName + " (Page " + (_pageIndex + 1) + "/" + _pages.Length + ")";
+        }
+    }
+
     sealed class DisplayManager
     {
         readonly IMyGridTerminalSystem _gridTerminalSystem;
         readonly IMyProgrammableBlock _me;
         readonly Configuration _configuration;
         readonly EventLogger _eventLogger;
+        readonly DebugManager _debugManager;
         readonly List<IMyTextPanel> _panels = new List<IMyTextPanel>();
         readonly StringBuilder _builder = new StringBuilder();
         readonly Action<string> _echo;
@@ -496,12 +587,14 @@
             IMyProgrammableBlock me,
             Configuration configuration,
             EventLogger eventLogger,
+            DebugManager debugManager,
             Action<string> echo)
         {
             _gridTerminalSystem = gridTerminalSystem;
             _me = me;
             _configuration = configuration;
             _eventLogger = eventLogger;
+            _debugManager = debugManager;
             _echo = echo;
         }
 
@@ -511,7 +604,9 @@
 
             WriteSurface(_configuration.FlightDisplayTag, BuildFlightText(version, tickCount, hardware, diagnostic));
             WriteSurface(_configuration.MaintenanceDisplayTag, maintenance);
-            WriteSurface(_configuration.EngineeringDisplayTag, BuildEngineeringText(version, tickCount, hardware, diagnostic, physicsEngineModel, capability));
+            WriteSurface(_configuration.EngineeringDisplayTag, _debugManager.Enabled
+                ? BuildDebugText(version, tickCount, hardware, diagnostic, physicsEngineModel, capability)
+                : BuildEngineeringText(version, tickCount, hardware, diagnostic, physicsEngineModel, capability));
             EchoMaintenanceSummary(version, tickCount, hardware, diagnostic);
         }
 
@@ -610,6 +705,115 @@
             return _builder.ToString();
         }
 
+
+        string BuildDebugText(
+            string version,
+            int tickCount,
+            HardwareSnapshot hardware,
+            DiagnosticSnapshot diagnostic,
+            PhysicsEngineModel physicsEngineModel,
+            CapabilitySnapshot capability)
+        {
+            _builder.Clear();
+            _builder.AppendLine("AAC DEBUG");
+            _builder.AppendLine("v" + version + "  MONITOR ONLY");
+            _builder.AppendLine("Tick " + FormatTick(tickCount));
+            _builder.AppendLine(_debugManager.StatusLine());
+            _builder.AppendLine("----------------------------");
+
+            int page = _debugManager.PageIndex;
+            if (page == 0)
+                AppendDebugOverview(_builder, hardware, diagnostic, physicsEngineModel, capability);
+            else if (page == 1)
+                AppendDebugDiscovery(_builder, hardware, diagnostic);
+            else if (page == 2)
+                AppendDebugPemSummary(_builder, physicsEngineModel);
+            else if (page == 3)
+                AppendBlockInspector(_builder, "Generator Inspector", physicsEngineModel.GravityGenerators);
+            else if (page == 4)
+                AppendBlockInspector(_builder, "Artificial Mass Inspector", physicsEngineModel.ArtificialMass);
+            else if (page == 5)
+                AppendDebugCapability(_builder, capability);
+            else
+                AppendDebugPerformance(_builder, tickCount);
+
+            return _builder.ToString();
+        }
+
+        void AppendDebugOverview(StringBuilder builder, HardwareSnapshot hardware, DiagnosticSnapshot diagnostic, PhysicsEngineModel model, CapabilitySnapshot capability)
+        {
+            builder.AppendLine("Overview");
+            builder.AppendLine("  POST      : " + diagnostic.Level);
+            builder.AppendLine("  PEM Ready : " + YesNo(model.Ready));
+            builder.AppendLine("  Capability: " + capability.Status);
+            builder.AppendLine("  Output    : LOCKED");
+            builder.AppendLine("  Control   : MONITOR ONLY");
+            builder.AppendLine("  Reference : " + ShortName(model.ReferenceControllerName, 18));
+        }
+
+        void AppendDebugDiscovery(StringBuilder builder, HardwareSnapshot hardware, DiagnosticSnapshot diagnostic)
+        {
+            builder.AppendLine("Discovery");
+            builder.AppendLine("  Controllers : " + FormatCount(hardware.ControllerCount));
+            builder.AppendLine("  Gravity Gen : " + FormatCount(hardware.GravityGeneratorCount));
+            builder.AppendLine("  Art. Mass   : " + FormatCount(hardware.ArtificialMassCount));
+            builder.AppendLine("  Text LCDs   : " + FormatCount(hardware.TextPanelCount));
+            builder.AppendLine("  Alarms      : " + FormatCount(hardware.AlarmCount));
+            builder.AppendLine("  Warn Lights : " + FormatCount(hardware.WarningLightCount));
+            builder.AppendLine("  Finding:");
+            AppendWrapped(builder, diagnostic.Message, "    ", 24);
+        }
+
+        void AppendDebugPemSummary(StringBuilder builder, PhysicsEngineModel model)
+        {
+            builder.AppendLine("PEM Summary");
+            builder.AppendLine("  Authority : AAC-owned hardware");
+            builder.AppendLine("  Ready     : " + YesNo(model.Ready));
+            builder.AppendLine("  Coords    : " + (model.CoordinateFrameValid ? "VALID" : "INVALID"));
+            builder.AppendLine("  Reference : " + ShortName(model.ReferenceControllerName, 18));
+            builder.AppendLine("  Tagged Gen: " + FormatCount(model.TaggedGravityGeneratorCount));
+            builder.AppendLine("  Tagged AM : " + FormatCount(model.TaggedArtificialMassCount));
+        }
+
+        void AppendBlockInspector(StringBuilder builder, string title, List<HardwareBlockMetadata> blocks)
+        {
+            builder.AppendLine(title);
+            builder.AppendLine("  Count: " + FormatCount(blocks.Count));
+            int max = Math.Min(blocks.Count, 6);
+            if (max == 0)
+            {
+                builder.AppendLine("  none");
+                return;
+            }
+            for (int i = 0; i < max; i++)
+            {
+                HardwareBlockMetadata block = blocks[i];
+                builder.AppendLine("  #" + (i + 1).ToString("00") + " " + ShortName(block.CustomName, 20));
+                builder.AppendLine("     Dir " + block.ShipDirection + " Dist " + block.DistanceFromController.ToString("0.0"));
+            }
+            if (blocks.Count > max)
+                builder.AppendLine("  +" + (blocks.Count - max) + " more");
+        }
+
+        void AppendDebugCapability(StringBuilder builder, CapabilitySnapshot capability)
+        {
+            builder.AppendLine("Capability Analysis");
+            builder.AppendLine("  Status    : " + capability.Status);
+            builder.AppendLine("  PEM Ready : " + YesNo(capability.PemReady));
+            builder.AppendLine("  Output    : LOCKED");
+            builder.AppendLine("  Message:");
+            AppendWrapped(builder, capability.Message, "    ", 24);
+        }
+
+        void AppendDebugPerformance(StringBuilder builder, int tickCount)
+        {
+            builder.AppendLine("Performance Placeholder");
+            builder.AppendLine("  Profiler  : not implemented");
+            builder.AppendLine("  Tick      : " + FormatTick(tickCount));
+            builder.AppendLine("  Cadence   : Update100");
+            builder.AppendLine("  Impact    : read-only display");
+        }
+
         void EchoMaintenanceSummary(string version, int tickCount, HardwareSnapshot hardware, DiagnosticSnapshot diagnostic)
         {
             if (_echo == null)
@@ -621,6 +825,7 @@
             _builder.AppendLine("Ctrl " + hardware.ControllerCount
                 + " Grav " + hardware.GravityGeneratorCount
                 + " Mass " + hardware.ArtificialMassCount);
+            _builder.AppendLine(_debugManager.StatusLine());
             _builder.AppendLine(ShortLine(diagnostic.Message, 36));
             _echo(_builder.ToString());
         }

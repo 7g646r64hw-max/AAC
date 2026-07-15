@@ -17,6 +17,8 @@ The AAC discovers arbitrary gravity-drive configurations and builds an internal 
 
 The informal term 'PEM Drive' refers only to the physical gravity-generator and artificial-mass propulsion system and is not used within the software UI.
 
+No subsystem may influence ship behavior until it can fully explain its own state through DebugManager.
+
 ## Milestone 1 Foundation Behavior Preserved
 
 AAC remains intentionally observational:
@@ -28,13 +30,45 @@ AAC remains intentionally observational:
 
 ## Milestone 2 PEM Behavior
 
-Milestone 2 adds the first read-only PEM pipeline:
+Milestone 2 added the first read-only PEM pipeline:
 
 1. `HardwareDiscovery` scans the same construct.
 2. `HardwareSnapshot` stores detected hardware counts, selected controller data, and detailed metadata for AAC-owned propulsion blocks.
 3. `PhysicsEngineModel` is built from AAC-owned propulsion hardware only.
 4. `CapabilityAnalysis` evaluates whether the PEM has a valid coordinate frame and tagged gravity-generator / artificial-mass pair.
 5. `DisplayManager` reports model and capability status without issuing outputs.
+
+## Milestone 2.5 Debug Behavior
+
+Milestone 2.5 adds a permanent read-only DebugManager:
+
+1. DebugManager handles debug commands and debug page selection.
+2. DebugManager reads current subsystem snapshots through DisplayManager rendering paths and never mutates subsystem state.
+3. Engineering LCDs become the debug display while debug mode is enabled.
+4. Flight and Maintenance LCD behavior remains unchanged.
+5. Programmable-block `Echo()` always includes a debug status line.
+6. Debug failures must not stop discovery, diagnostics, PEM updates, or capability analysis.
+
+Supported debug commands:
+
+- `debug on`
+- `debug off`
+- `debug pem`
+- `debug discovery`
+- `debug capability`
+- `debug performance`
+- `debug next`
+- `debug prev`
+
+Debug pages:
+
+- Overview
+- Discovery
+- PEM Summary
+- Generator Inspector
+- Artificial Mass Inspector
+- Capability Analysis
+- Performance Placeholder
 
 ## Hardware Ownership Rule
 
@@ -57,4 +91,4 @@ Tagged propulsion block metadata includes the dominant ship-relative direction f
 
 - **Flight**: concise version, operating mode, status, selected controller name, detected gravity generator count, detected artificial mass count, and tick count. This remains intentionally unchanged in philosophy.
 - **Maintenance**: POST summary, discovered hardware counts, AAC-owned tagged propulsion counts, display counts, and recent tick-labeled events.
-- **Engineering**: runtime state, PEM readiness, tagged generators, tagged artificial mass, coordinate validity, capability analysis status, `Control Output: LOCKED`, and discovery snapshot.
+- **Engineering**: runtime state, PEM readiness, tagged generators, tagged artificial mass, coordinate validity, capability analysis status, `Control Output: LOCKED`, and discovery snapshot when debug mode is off. When debug mode is on, the Engineering LCD renders DebugManager pages.

@@ -1,8 +1,8 @@
 # Installation Guide
 
-Version: `v0.2.0-alpha.1`
+Version: `v0.2.5-alpha.1`
 
-AAC v0.2.0-alpha.1 is a monitor-only Space Engineers Programmable Block script. It discovers hardware, evaluates diagnostics, builds a read-only Physics Engine Model (PEM), updates tagged LCDs, and echoes a concise maintenance summary. It does not apply propulsion or alert outputs.
+AAC v0.2.5-alpha.1 is a monitor-only Space Engineers Programmable Block script. It discovers hardware, evaluates diagnostics, builds a read-only Physics Engine Model (PEM), updates tagged LCDs, provides read-only debug pages, and echoes a concise maintenance/debug summary. It does not apply propulsion or alert outputs.
 
 ## Required Blocks
 
@@ -44,7 +44,7 @@ Add the base tag `[AAC]` to optional AAC-owned alarm and warning-light block nam
 - `[AAC] Maintenance`
 - `[AAC] Engineering`
 
-Tagged LCDs are configured by AAC as text-and-image surfaces using the Monospace font at approximately `0.80` font size.
+Tagged LCDs are configured by AAC as text-and-image surfaces using the Debug monospace font at approximately `0.75` font size.
 
 ## Operator Commands
 
@@ -55,15 +55,26 @@ Run the programmable block with either command to add a manual rescan entry to t
 
 Discovery also runs automatically every 100 simulation ticks.
 
+Run the programmable block with debug commands to inspect read-only validation pages on the Engineering LCD:
+
+- `debug on`
+- `debug off`
+- `debug pem`
+- `debug discovery`
+- `debug capability`
+- `debug performance`
+- `debug next`
+- `debug prev`
+
 ## Expected Displays
 
 - **Flight LCD**: concise pilot view with version, monitor-only mode, POST, controller, detected gravity generator count, detected artificial mass count, tick, and a short finding line.
 - **Maintenance LCD**: technician view with POST state, hardware booleans, finding text split across short lines, detected hardware counts, AAC-owned tagged propulsion counts, display counts, and bracketed event ticks such as `[00052]`.
-- **Engineering LCD**: development view with discovery/diagnostic status, disabled solver state, PEM readiness, tagged generator count, tagged artificial mass count, coordinate validity, capability status, `Control Output: LOCKED`, and discovery snapshot.
-- **Programmable Block Echo**: concise maintenance summary mirroring the current POST state and discovered hardware counts.
+- **Engineering LCD**: normal development view with discovery/diagnostic status, disabled solver state, PEM readiness, tagged generator count, tagged artificial mass count, coordinate validity, capability status, `Control Output: LOCKED`, and discovery snapshot. When debug mode is enabled, this LCD becomes the DebugManager display.
+- **Programmable Block Echo**: concise maintenance summary plus a permanent debug status line such as `Debug: OFF` or `Debug: PEM Summary (Page 3/7)`.
 
 ## Safety Notes
 
-AAC v0.2.0-alpha.1 preserves monitor-only behavior. It does not command gravity generators, artificial mass blocks, alarms, warning lights, thrusters, gyros, or other ship-control outputs.
+AAC v0.2.5-alpha.1 preserves monitor-only behavior. It does not command gravity generators, artificial mass blocks, alarms, warning lights, thrusters, gyros, or other ship-control outputs.
 
 Block group naming will be finalized in a later milestone.
