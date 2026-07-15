@@ -2,36 +2,35 @@
 
 Project Lead: Nomaddison
 
-AAC is a self-calibrating gravity management system for Space Engineers.
+AAC is a monitor-only gravity management and engineering visibility system for Space Engineers.
 
 ## Current Status
 
-Milestone 2.5 Debug & Validation Framework (`v0.2.5-alpha.1`)
+Milestone 3 Physics Engine Model Enhancement (`v0.3.0-alpha.1`)
 
-This release preserves the verified monitor-only Milestone 2 foundation and adds a permanent read-only `DebugManager`. AAC still performs same-construct discovery, POST diagnostics, display updates, deterministic maintenance events, PEM construction, capability analysis, and programmable-block echo output without commanding propulsion or alert hardware.
+AAC now treats the Physics Engine Model (PEM) as the authoritative digital twin for AAC-owned propulsion hardware while preserving strict monitor-only behavior. The controller discovers `[AAC]` gravity generators and artificial mass blocks, derives orientation and mount metadata from game data, validates lifecycle state, builds dynamic capability groups, and exposes every engineering display value through read-only DebugManager pages.
 
 ## Implemented Foundation
 
 - AAC Core tick loop running every 100 simulation ticks.
-- HardwareDiscovery for ship controllers, gravity generators, artificial mass, text panels, alarms, and warning lights.
-- Detailed hardware metadata for AAC-owned propulsion blocks.
-- Ship-relative coordinate labels: Forward, Backward, Left, Right, Up, and Down.
-- PhysicsEngineModel built only from gravity generators and artificial mass blocks whose Custom Name includes `[AAC]`.
-- CapabilityAnalysis that evaluates PEM readiness after model construction.
-- Permanent DebugManager that only reads subsystem snapshots and never modifies subsystem state.
-- Debug commands: `debug on`, `debug off`, `debug pem`, `debug discovery`, `debug capability`, `debug performance`, `debug next`, and `debug prev`.
-- Engineering LCD debug pages for overview, discovery, PEM summary, generator inspection, artificial mass inspection, capability analysis, and a performance placeholder.
-- Permanent programmable-block `Echo()` debug status line such as `Debug: OFF` or `Debug: PEM Summary (Page 3/7)`.
-- Configuration tags for flight, maintenance, and engineering LCDs.
-- Diagnostics / POST summary for discovered required hardware, preserving Milestone 1 display philosophy.
-- DisplayManager output for pilot, maintenance, and engineering audiences.
-- Engineering LCD status for PEM readiness, tagged propulsion hardware, coordinate validity, capability status, and `Control Output: LOCKED` when debug mode is off.
-- Startup banner and display text identifying the current version and `MONITOR ONLY` operating mode.
-- EventLogger ring buffer for boot and manual rescan events using deterministic, bracketed AAC tick labels such as `[00052]`.
+- Same-construct discovery for controllers, gravity generators, artificial mass, LCD panels, alarms, and warning lights.
+- `[AAC]` ownership filtering for propulsion hardware only.
+- PEM metadata for entity ID, custom name, mount position, block orientation, gravity projection axis, distance, enabled state, working state, validation state, and contribution state.
+- Deterministic debug identifiers such as `GEN-001` and `MASS-001` generated from sorted entity IDs for engineering inspection.
+- Generator lifecycle tracking: discovered, owned, working, validated, and contributing.
+- Dynamic capability assessment by translation axis with READY status, contributing generator count, tolerance count, and reasons for non-ready axes.
+- Engineering PEM Summary with overall health, reference controller, coordinate frame, detected/tagged/contributing/non-contributing counts, and redundancy per axis.
+- Permanent read-only DebugManager summary pages plus dedicated one-component-per-page inspectors.
+- Debug commands: `debug on`, `debug off`, `debug pem`, `debug discovery`, `debug capability`, `debug performance`, `debug generators`, `debug mass`, `debug next`, and `debug prev`.
+- Monitor-only DisplayManager output for flight, maintenance, and engineering LCD audiences.
+- Permanent programmable-block `Echo()` debug status line.
+- EventLogger ring buffer for boot and manual rescan events.
 
 ## Hardware Ownership Rule
 
-Only gravity generators and artificial mass blocks with the `[AAC]` tag in their Custom Name are AAC-owned propulsion hardware. Only these tagged propulsion blocks are included in the PEM or any future control logic. Ship controllers are exempt from this ownership filter so AAC can always determine the ship reference frame.
+Only gravity generators and artificial mass blocks with `[AAC]` in their Custom Name are AAC-owned propulsion hardware. The PEM and capability analysis consume only those tagged propulsion blocks. Ship controllers are exempt so AAC can establish a reference coordinate frame.
+
+AAC never infers orientation, capability, or ownership from block names other than the explicit `[AAC]` ownership tag. Mount position, block orientation, and gravity projection axis are derived from block and controller world matrices.
 
 ## Operator Commands
 
@@ -45,8 +44,12 @@ Debug commands are also supported:
 - `debug discovery`
 - `debug capability`
 - `debug performance`
+- `debug generators`
+- `debug mass`
 - `debug next`
 - `debug prev`
+
+When a generator or mass inspector is active, `debug next` and `debug prev` navigate between components in that inspector. Otherwise they navigate summary pages.
 
 ## Space Engineers Programmable Block
 
@@ -56,4 +59,4 @@ Do **not** wrap the file in a `Program : MyGridProgram` class and do **not** add
 
 ## Monitor-Only Safety
 
-AAC v0.2.5-alpha.1 does not command gravity generators, artificial mass blocks, alarms, warning lights, thrusters, gyros, or other control outputs. It only observes hardware, evaluates diagnostics, builds the read-only PEM, analyzes capability, writes displays, shows read-only debug pages, and echoes a concise maintenance/debug summary.
+AAC v0.3.0-alpha.1 does not command gravity generators, artificial mass blocks, alarms, warning lights, thrusters, gyros, or other control outputs. It only observes hardware, builds the PEM digital twin, evaluates dynamic capability, writes displays, shows read-only debug pages, and echoes concise status.
