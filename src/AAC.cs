@@ -507,6 +507,15 @@
                     count++;
             return count;
         }
+
+        static int CountContributing(List<HardwareBlockMetadata> blocks)
+        {
+            int count = 0;
+            for (int i = 0; i < blocks.Count; i++)
+                if (blocks[i].Contributing)
+                    count++;
+            return count;
+        }
     }
 
     sealed class CapabilityAnalysis
