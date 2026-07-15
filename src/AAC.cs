@@ -788,7 +788,7 @@
             for (int i = 0; i < max; i++)
             {
                 HardwareBlockMetadata block = blocks[i];
-                builder.AppendLine("  #" + (i + 1).ToString("00") + " " + ShortName(block.CustomName, 20));
+                builder.AppendLine("  #" + (i + 1).ToString("00") + " " + ShortName(block.CustomName, 40));
                 builder.AppendLine("     Dir " + block.ShipDirection + " Dist " + block.DistanceFromController.ToString("0.0"));
             }
             if (blocks.Count > max)
