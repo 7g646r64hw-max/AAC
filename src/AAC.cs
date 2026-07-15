@@ -462,32 +462,6 @@
         }
     }
 
-
-    sealed class PhysicsEngineModelBuilder
-    {
-        public PhysicsEngineModel Build(HardwareSnapshot hardware)
-        {
-            bool coordinateValid = hardware.CoordinateFrameValid;
-            List<HardwareBlockMetadata> generators = AssignStableDebugIds(hardware.TaggedGravityGenerators, "GEN");
-            List<HardwareBlockMetadata> mass = AssignStableDebugIds(hardware.TaggedArtificialMass, "MASS");
-
-            return new PhysicsEngineModel(
-                coordinateValid,
-                hardware.PrimaryControllerName,
-                generators,
-                mass);
-        }
-
-        static List<HardwareBlockMetadata> AssignStableDebugIds(List<HardwareBlockMetadata> source, string prefix)
-        {
-            List<HardwareBlockMetadata> sorted = new List<HardwareBlockMetadata>(source);
-            sorted.Sort((a, b) => a.EntityId.CompareTo(b.EntityId));
-            for (int i = 0; i < sorted.Count; i++)
-                sorted[i] = sorted[i].WithDebugId(prefix, i + 1);
-            return sorted;
-        }
-    }
-
     sealed class PhysicsEngineModel
     {
         public readonly bool CoordinateFrameValid;
@@ -512,8 +486,26 @@
         {
             CoordinateFrameValid = coordinateFrameValid;
             ReferenceControllerName = referenceControllerName;
-            GravityGenerators = gravityGenerators;
-            ArtificialMass = artificialMass;
+            GravityGenerators = AssignDebugIds(gravityGenerators, "GEN");
+            ArtificialMass = AssignDebugIds(artificialMass, "MASS");
+        }
+
+        static List<HardwareBlockMetadata> AssignDebugIds(List<HardwareBlockMetadata> source, string prefix)
+        {
+            List<HardwareBlockMetadata> sorted = new List<HardwareBlockMetadata>(source);
+            sorted.Sort((a, b) => a.EntityId.CompareTo(b.EntityId));
+            for (int i = 0; i < sorted.Count; i++)
+                sorted[i] = sorted[i].WithDebugId(prefix, i + 1);
+            return sorted;
+        }
+
+        static int CountContributing(List<HardwareBlockMetadata> blocks)
+        {
+            int count = 0;
+            for (int i = 0; i < blocks.Count; i++)
+                if (blocks[i].Contributing)
+                    count++;
+            return count;
         }
 
         static int CountContributing(List<HardwareBlockMetadata> blocks)
