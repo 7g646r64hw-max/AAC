@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.5.1
+
+- Polished Engineering Console LCD spacing and field alignment across Status, Discovery, PEM, Capability, Inspector, and Performance pages.
+- Preserved validated v0.3.5 engineering behavior, debug navigation, monitor-only operation, Hardware Discovery, PEM, and Capability Assessment.
+- Retained subsystem-based warning summaries with multi-tag formatting such as `Hardware: (GEN) (MASS)`.
+- Confirmed `src/AAC.cs` remains a single self-contained Space Engineers Programmable Block script.
+
 ## v0.3.5
 
 - Implemented the Milestone 3.5 Engineering Console refinement.
